@@ -1,0 +1,354 @@
+# Project:   macbash
+# File:      internal/rules/builtin/coreutils.yaml
+# Purpose:   Rules for GNU coreutils compatibility issues
+# Language:  YAML
+#
+# License:   Apache-2.0
+# Copyright: (c) 2025 HyperSec Pty Ltd
+
+version: "1.0"
+
+rules:
+  # sed
+
+  - id: sed-inplace-no-backup
+    name: "sed -i without backup extension"
+    description: |
+      GNU sed allows 'sed -i' without a backup extension, but BSD sed (macOS)
+      requires an argument after -i. Use 'sed -i.bak' for portability, or
+      'sed -i '' for no backup on BSD.
+    severity: error
+    pattern: 'sed\s+-i\s+([''"])'
+    negative_pattern: 'sed\s+-i[.'']'
+    fix_type: replace
+    fix_template: "sed -i.bak $1"
+    examples:
+      bad: "sed -i 's/foo/bar/' file.txt"
+      good: "sed -i.bak 's/foo/bar/' file.txt"
+    tags: [coreutils, sed]
+    references:
+      - https://www.gnu.org/software/sed/manual/sed.html
+      - https://www.johndcook.com/blog/2023/10/18/portable-sed-i/
+
+  - id: sed-extended-regex-r
+    name: "sed -r (GNU extended regex)"
+    description: |
+      GNU sed uses -r for extended regex, BSD sed uses -E.
+      Use -E which works on both (GNU sed also accepts -E).
+    severity: warning
+    pattern: 'sed\s+(-[a-zA-Z]*r|-r)'
+    fix_type: replace
+    fix_template: "sed -E"
+    examples:
+      bad: "sed -r 's/foo+/bar/' file.txt"
+      good: "sed -E 's/foo+/bar/' file.txt"
+    tags: [coreutils, sed]
+
+  # grep
+
+  - id: grep-perl-regex
+    name: "grep -P (Perl regex)"
+    description: |
+      grep -P (Perl-compatible regex) is GNU-only. BSD grep does not support it.
+      Simple patterns (\d, \w, \s) are auto-converted to grep -E.
+      Complex patterns with \K, lookbehinds, etc. require manual conversion.
+    severity: error
+    pattern: 'grep\s+(-[a-zA-Z]*P[a-zA-Z]*\s|-P\s)'
+    fix_type: transform
+    fix_template: "grep -E with ERE pattern (auto-converts \\d→[0-9], \\w→[[:alnum:]_], \\s→[[:space:]])"
+    why_unfixable: "Pattern uses PCRE features (\\K, lookbehinds (?<=), lookaheads (?=)) that have no ERE equivalent. Convert manually or use perl -ne instead"
+    examples:
+      bad: "grep -P '\\d+' file.txt"
+      good: "grep -E '[0-9]+' file.txt"
+    tags: [coreutils, grep]
+    references:
+      - https://ponderthebits.com/2017/01/know-your-tools-linux-gnu-vs-mac-bsd-command-line-utilities-grep-strings-sed-and-find/
+
+  - id: grep-only-matching-P
+    name: "grep -oP combination"
+    description: |
+      grep -oP uses Perl regex which is GNU-only.
+      Simple patterns are auto-converted to grep -oE.
+      Complex patterns with \K, lookbehinds require manual conversion.
+    severity: error
+    pattern: 'grep\s+-[a-zA-Z]*o[a-zA-Z]*P|grep\s+-[a-zA-Z]*P[a-zA-Z]*o'
+    fix_type: transform
+    fix_template: "grep -oE with ERE pattern"
+    why_unfixable: "Pattern uses PCRE features (\\K, (?<=), (?=)) that have no ERE equivalent. Use perl -ne instead"
+    examples:
+      bad: "grep -oP '\\w+' file.txt"
+      good: "grep -oE '[a-zA-Z0-9_]+' file.txt"
+    tags: [coreutils, grep]
+
+  # readlink / realpath
+
+  - id: readlink-canonicalize
+    name: "readlink -f (canonicalise)"
+    description: |
+      readlink -f is GNU-only. BSD readlink does not support -f.
+      Use a portable alternative with cd/pwd or install coreutils.
+    severity: error
+    pattern: 'readlink\s+-f\s'
+    fix_type: suggest
+    fix_template: '$(cd "$(dirname "$path")" && pwd -P)/$(basename "$path")'
+    why_unfixable: "The replacement depends on what path is being resolved. For script path use: $(cd \"$(dirname \"$0\")\" && pwd -P). For variables, extract the dirname/basename pattern for your specific use case"
+    examples:
+      bad: 'SCRIPT_DIR=$(readlink -f "$0")'
+      good: 'SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd -P)'
+    tags: [coreutils, readlink]
+    references:
+      - https://github.com/ko1nksm/readlinkf
+
+  - id: readlink-canonicalize-missing
+    name: "readlink -m (missing ok)"
+    description: |
+      readlink -m is GNU-only, allows non-existent path components.
+      Not available on BSD.
+    severity: error
+    pattern: 'readlink\s+-m\s'
+    fix_type: suggest
+    fix_template: "Use portable path resolution"
+    tags: [coreutils, readlink]
+
+  - id: realpath-command
+    name: "realpath command"
+    description: |
+      realpath is not available by default on older macOS versions.
+      Use a portable alternative or check for availability.
+    severity: warning
+    pattern: '\brealpath\s+'
+    negative_pattern: 'command\s+-v\s+realpath|which\s+realpath|type\s+realpath'
+    fix_type: suggest
+    fix_template: '$(cd "$(dirname "$path")" && pwd -P)/$(basename "$path")'
+    examples:
+      bad: 'ABS_PATH=$(realpath "$file")'
+      good: 'ABS_PATH=$(cd "$(dirname "$file")" && pwd -P)/$(basename "$file")'
+    tags: [coreutils, realpath]
+
+  # date
+
+  - id: date-d-option
+    name: "date -d (parse date string)"
+    description: |
+      date -d is GNU-only for parsing date strings.
+      BSD date uses -j -f for date parsing.
+    severity: error
+    pattern: 'date\s+-d\s+'
+    negative_pattern: 'date\s+-d\s+@'
+    fix_type: suggest
+    fix_template: "date -j -f FORMAT STRING"
+    why_unfixable: "BSD date uses different syntax: date -j -f '%Y-%m-%d' '2024-01-01'. Relative dates like 'yesterday' or '+3 days' need: date -v-1d or date -v+3d on BSD"
+    examples:
+      bad: 'date -d "2024-01-01"'
+      good: 'date -j -f "%Y-%m-%d" "2024-01-01"'
+    tags: [coreutils, date]
+    references:
+      - https://www.shell-tips.com/linux/how-to-format-date-and-time-in-linux-macos-and-bash/
+
+  - id: date-d-epoch
+    name: "date -d @epoch (epoch to date)"
+    description: |
+      date -d @EPOCH is GNU-only. BSD date uses -r EPOCH.
+    severity: error
+    pattern: 'date\s+-d\s+@'
+    fix_type: replace
+    fix_template: "date -r"
+    examples:
+      bad: "date -d @1609459200"
+      good: "date -r 1609459200"
+    tags: [coreutils, date]
+
+  - id: date-long-options
+    name: "date --date (long option)"
+    description: |
+      Long options like --date are GNU-only.
+    severity: error
+    pattern: 'date\s+--date'
+    fix_type: suggest
+    fix_template: "date -d or date -j -f"
+    tags: [coreutils, date]
+
+  # stat
+
+  - id: stat-format-c
+    name: "stat -c (format string)"
+    description: |
+      stat -c FORMAT is GNU-only. BSD stat uses -f FORMAT.
+      Note: format specifiers also differ between GNU and BSD.
+    severity: error
+    pattern: 'stat\s+-c\s'
+    fix_type: suggest
+    fix_template: "stat -f FORMAT (BSD)"
+    why_unfixable: "BSD stat uses -f instead of -c, with DIFFERENT format specifiers: GNU %s (size)→BSD %z, GNU %Y (mtime epoch)→BSD %m, GNU %U (owner)→BSD %Su, GNU %G (group)→BSD %Sg, GNU %a (perms octal)→BSD %Lp"
+    examples:
+      bad: "stat -c '%s' file.txt"
+      good: "stat -f '%z' file.txt  # BSD equivalent for size"
+    tags: [coreutils, stat]
+
+  - id: stat-long-options
+    name: "stat --format (long option)"
+    description: |
+      stat --format is GNU-only. BSD stat uses -f.
+    severity: error
+    pattern: 'stat\s+--format'
+    fix_type: suggest
+    fix_template: "stat -f on BSD"
+    tags: [coreutils, stat]
+
+  # xargs
+
+  - id: xargs-no-run-if-empty
+    name: "xargs -r (no-run-if-empty)"
+    description: |
+      xargs -r is GNU-only. BSD xargs doesn't run on empty input by default,
+      so -r is unnecessary and will cause an error.
+    severity: error
+    pattern: 'xargs\s+(-[a-zA-Z]*r|-r|--no-run-if-empty)'
+    fix_type: replace
+    fix_template: "xargs"
+    examples:
+      bad: "find . -name '*.txt' | xargs -r rm"
+      good: "find . -name '*.txt' | xargs rm"
+    tags: [coreutils, xargs]
+
+  - id: xargs-delimiter
+    name: "xargs -d (delimiter)"
+    description: |
+      xargs -d is GNU-only. Use tr or other methods for custom delimiters.
+    severity: error
+    pattern: 'xargs\s+-d'
+    fix_type: suggest
+    fix_template: "tr '\\n' '\\0' | xargs -0"
+    tags: [coreutils, xargs]
+
+  # find
+
+  - id: find-printf
+    name: "find -printf"
+    description: |
+      find -printf is GNU-only. Use -exec stat or other alternatives.
+    severity: error
+    pattern: 'find\s+.*\s+-printf\s'
+    fix_type: suggest
+    fix_template: "find ... -exec stat ... or -exec printf ..."
+    tags: [coreutils, find]
+
+  - id: find-regextype
+    name: "find -regextype"
+    description: |
+      find -regextype is GNU-only. BSD find has different regex behaviour.
+    severity: error
+    pattern: 'find\s+.*\s+-regextype\s'
+    fix_type: suggest
+    fix_template: "Use basic regex or pipe to grep"
+    tags: [coreutils, find]
+
+  # sort
+
+  - id: sort-version
+    name: "sort -V (version sort)"
+    description: |
+      sort -V (version sort) is GNU-only. Not available on BSD.
+    severity: error
+    pattern: 'sort\s+(-[a-zA-Z]*V|-V|--version-sort)'
+    fix_type: suggest
+    fix_template: "Custom sort function or use numeric sort where possible"
+    tags: [coreutils, sort]
+
+  - id: sort-human
+    name: "sort -h (human numeric)"
+    description: |
+      sort -h (human-readable numeric sort) is GNU-only.
+    severity: warning
+    pattern: 'sort\s+(-[a-zA-Z]*h|-h|--human-numeric-sort)'
+    fix_type: suggest
+    fix_template: "Convert to bytes first, then sort -n"
+    tags: [coreutils, sort]
+
+  # head / tail
+
+  - id: head-negative-lines
+    name: "head -n -N (negative line count)"
+    description: |
+      head -n -N (all but last N lines) is GNU-only.
+      BSD head does not support negative counts.
+    severity: error
+    pattern: 'head\s+-n\s*-\d+'
+    fix_type: suggest
+    fix_template: "awk 'NR>N' or calculate line count first"
+    examples:
+      bad: "head -n -5 file.txt"
+      good: "awk 'NR <= (total - 5)' file.txt"
+    tags: [coreutils, head]
+
+  # mktemp
+
+  - id: mktemp-no-template
+    name: "mktemp without template"
+    description: |
+      GNU mktemp has a default template, BSD mktemp requires one.
+      Always provide an explicit template for portability.
+    severity: warning
+    pattern: 'mktemp\s*$|mktemp\s+-d\s*$'
+    fix_type: suggest
+    fix_template: "mktemp /tmp/myapp.XXXXXX or mktemp -d /tmp/myapp.XXXXXX"
+    examples:
+      bad: "TMPFILE=$(mktemp)"
+      good: "TMPFILE=$(mktemp /tmp/myapp.XXXXXX)"
+    tags: [coreutils, mktemp]
+
+  # timeout
+
+  - id: timeout-command
+    name: "timeout command"
+    description: |
+      The timeout command is part of GNU coreutils and not available on macOS.
+      Install via 'brew install coreutils' and use gtimeout, or use alternatives.
+    severity: error
+    pattern: '\btimeout\s+(\d)'
+    fix_type: replace
+    fix_template: "gtimeout $1"
+    examples:
+      bad: "timeout 5 command"
+      good: "gtimeout 5 command  # requires: brew install coreutils"
+    tags: [coreutils, timeout]
+    references:
+      - https://dev.to/maple/bringing-timeout-to-macos-without-installing-all-of-gnu-coreutils-22lj
+
+  # cp / mv
+
+  - id: cp-no-target-dir
+    name: "cp -T (no target directory)"
+    description: |
+      cp -T is GNU-only. Use explicit paths instead.
+    severity: error
+    pattern: 'cp\s+(-[a-zA-Z]*T|-T|--no-target-directory)'
+    fix_type: suggest
+    fix_template: "Use explicit source and destination paths"
+    tags: [coreutils, cp]
+
+  - id: mv-no-target-dir
+    name: "mv -T (no target directory)"
+    description: |
+      mv -T is GNU-only. Use explicit paths instead.
+    severity: error
+    pattern: 'mv\s+(-[a-zA-Z]*T|-T|--no-target-directory)'
+    fix_type: suggest
+    fix_template: "Use explicit source and destination paths"
+    tags: [coreutils, mv]
+
+  # seq
+
+  - id: seq-command
+    name: "seq command"
+    description: |
+      seq is available on both, but BSD has jot as an alternative.
+      For maximum portability, use brace expansion {1..N} (bash 3+).
+    severity: info
+    pattern: '\bseq\s+'
+    fix_type: suggest
+    fix_template: "Use {start..end} brace expansion or for ((i=1; i<=n; i++))"
+    examples:
+      bad: "for i in $(seq 1 10); do echo $i; done"
+      good: "for i in {1..10}; do echo $i; done"
+    tags: [coreutils, seq]
