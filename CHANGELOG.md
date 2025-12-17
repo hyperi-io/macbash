@@ -1,6 +1,13 @@
 # 1.0.0 (2025-12-17)
 
 
+### Features
+
+* initial release ([fd96d71](https://github.com/hypersec-io/macbash/commit/fd96d71a43988b2a927a4e36eaf7735e6503d080))
+
+# 1.0.0 (2025-12-17)
+
+
 * feat!: v1.0 release - auto-fix, packaging, Apache-2.0 ([6e2b6df](https://github.com/hypersec-io/macbash/commit/6e2b6dff4802241d7922993b70614fe8178beb46))
 
 
