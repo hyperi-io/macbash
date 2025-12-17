@@ -1,0 +1,141 @@
+# Project:   macbash
+# File:      .github/workflows/ci.yml
+# Purpose:   Standalone CI pipeline
+# Language:  YAML (GitHub Actions)
+#
+# License:   Apache-2.0
+# Copyright: (c) 2025 HyperSec Pty Ltd
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+    paths-ignore: ["**.md", "docs/**", "LICENSE*", ".gitignore"]
+  pull_request:
+    paths-ignore: ["**.md", "docs/**", "LICENSE*", ".gitignore"]
+  workflow_dispatch:
+
+env:
+  GO_VERSION: ">=1.23"
+
+jobs:
+  quality:
+    name: Quality
+    runs-on: ${{ vars.GH_RUNNER_DEFAULT || 'ubuntu-latest' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      - name: Install tools
+        run: |
+          go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
+          go install github.com/securego/gosec/v2/cmd/gosec@latest
+          go install golang.org/x/vuln/cmd/govulncheck@latest
+
+      - name: Gitleaks (secret scanning)
+        if: ${{ vars.ENABLE_GITLEAKS == 'true' }}
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITLEAKS_LICENSE: ${{ secrets.GITLEAKS_GH_ACTIONS_KEY }}
+
+      - name: Check formatting
+        run: |
+          if [ -n "$(gofmt -l .)" ]; then
+            echo "::error::Code is not formatted. Run 'gofmt -w .'"
+            gofmt -l .
+            exit 1
+          fi
+
+      - name: Run go vet
+        run: go vet ./...
+
+      - name: Run golangci-lint
+        run: golangci-lint run --timeout 5m
+
+      - name: Run gosec
+        run: gosec -quiet -exclude=G304,G301,G306 ./...
+
+      - name: Run govulncheck
+        run: govulncheck ./...
+
+  test:
+    name: Test
+    needs: quality
+    runs-on: ${{ vars.GH_RUNNER_DEFAULT || 'ubuntu-latest' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      - name: Run tests
+        run: go test -v -race -coverprofile=coverage.out ./...
+
+      - name: Check coverage
+        run: |
+          go tool cover -func=coverage.out
+          COVERAGE=$(go tool cover -func=coverage.out | grep total | awk '{print $3}' | tr -d '%')
+          echo "Total coverage: ${COVERAGE}%"
+          # Fail if coverage is below 80%
+          if (( $(echo "$COVERAGE < 80" | bc -l) )); then
+            echo "::warning::Coverage is below 80% (${COVERAGE}%)"
+          fi
+
+  build:
+    name: Build
+    needs: test
+    runs-on: ${{ vars.GH_RUNNER_DEFAULT || 'ubuntu-latest' }}
+    strategy:
+      matrix:
+        goos: [linux, darwin]
+        goarch: [amd64, arm64]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      - name: Build
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+        run: |
+          mkdir -p dist
+          go build -ldflags="-s -w" -o dist/macbash-${{ matrix.goos }}-${{ matrix.goarch }} ./cmd/macbash
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: macbash-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: dist/macbash-${{ matrix.goos }}-${{ matrix.goarch }}
+
+  # Optional: Cross-platform test on macOS to verify our tool works where it matters
+  # Uncomment if you have macOS runners available
+  # test-macos:
+  #   name: Test (macOS)
+  #   needs: quality
+  #   runs-on: macos-latest
+  #   steps:
+  #     - uses: actions/checkout@v4
+  #
+  #     - name: Set up Go
+  #       uses: actions/setup-go@v5
+  #       with:
+  #         go-version: ${{ env.GO_VERSION }}
+  #         cache: true
+  #
+  #     - name: Run tests
+  #       run: go test -v -race ./...

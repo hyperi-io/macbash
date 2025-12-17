@@ -1,0 +1,238 @@
+# Project:   macbash
+# File:      internal/rules/builtin/bash.yaml
+# Purpose:   Rules for bash version compatibility (macOS ships bash 3.2)
+# Language:  YAML
+#
+# License:   Apache-2.0
+# Copyright: (c) 2025 HyperSec Pty Ltd
+
+version: "1.0"
+
+rules:
+  # Bash 4+ features (macOS ships bash 3.2 due to GPLv3)
+
+  - id: bash4-associative-array
+    name: "Associative arrays (bash 4+)"
+    description: |
+      declare -A creates associative arrays, which require bash 4.0+.
+      macOS ships with bash 3.2 by default due to GPLv3 licensing.
+    severity: error
+    pattern: 'declare\s+-A\s'
+    fix_type: suggest
+    fix_template: "Use indexed arrays with naming convention, or require bash 4+"
+    why_unfixable: "Associative arrays need complete rewrite. Alternatives: 1) Use indexed arrays with key_value naming, 2) Use external file/awk, 3) Add shebang #!/usr/bin/env bash and require brew install bash on macOS"
+    examples:
+      bad: "declare -A mymap"
+      good: "# Use indexed arrays or install bash 4+ via Homebrew"
+    tags: [bash, bash4]
+    references:
+      - https://tldp.org/LDP/abs/html/bashver4.html
+
+  - id: bash4-case-modification
+    name: "Case modification ${var,,} ${var^^} (bash 4+)"
+    description: |
+      Parameter expansion for case modification requires bash 4.0+.
+      Use tr or awk for portable case conversion.
+    severity: error
+    pattern: '\$\{[^}]+(,,|\^\^)'
+    fix_type: suggest
+    fix_template: '$(echo "$var" | tr "[:upper:]" "[:lower:]")'
+    why_unfixable: "Context-dependent variable name. Replace ${var,,} with $(echo \"$var\" | tr '[:upper:]' '[:lower:]') and ${var^^} with $(echo \"$var\" | tr '[:lower:]' '[:upper:]')"
+    examples:
+      bad: 'lower="${var,,}"'
+      good: 'lower=$(echo "$var" | tr "[:upper:]" "[:lower:]")'
+    tags: [bash, bash4]
+
+  - id: bash4-mapfile
+    name: "mapfile/readarray (bash 4+)"
+    description: |
+      mapfile (aka readarray) requires bash 4.0+.
+      Use a while-read loop for portable array reading.
+    severity: error
+    pattern: '\b(mapfile|readarray)\b'
+    fix_type: suggest
+    fix_template: 'while IFS= read -r line; do arr+=("$line"); done < file'
+    why_unfixable: "Requires multi-line replacement. Convert 'mapfile -t arr < file' to: arr=(); while IFS= read -r line; do arr+=(\"$line\"); done < file"
+    examples:
+      bad: "mapfile -t lines < file.txt"
+      good: |
+        while IFS= read -r line; do
+          lines+=("$line")
+        done < file.txt
+    tags: [bash, bash4]
+
+  - id: bash4-coproc
+    name: "coproc (bash 4+)"
+    description: |
+      The coproc keyword for coprocesses requires bash 4.0+.
+    severity: error
+    pattern: '\bcoproc\b'
+    fix_type: suggest
+    fix_template: "Use named pipes (mkfifo) or process substitution"
+    tags: [bash, bash4]
+
+  - id: bash4-pipe-stderr
+    name: "|& pipe stderr (bash 4+)"
+    description: |
+      The |& operator (pipe stdout and stderr) requires bash 4.0+.
+      Use 2>&1 | for portable stderr redirection.
+    severity: error
+    pattern: '\|&'
+    fix_type: replace
+    fix_template: "2>&1 |"
+    examples:
+      bad: "command |& grep error"
+      good: "command 2>&1 | grep error"
+    tags: [bash, bash4]
+
+  - id: bash4-negative-subscript
+    name: "Negative array subscript (bash 4.3+)"
+    description: |
+      Negative array indices like ${arr[-1]} require bash 4.3+.
+      Use ${arr[${#arr[@]}-1]} for the last element.
+    severity: error
+    pattern: '\$\{([a-zA-Z_][a-zA-Z0-9_]*)\[-1\]\}'
+    fix_type: replace
+    fix_template: '${$1[${#$1[@]}-1]}'
+    examples:
+      bad: 'last="${arr[-1]}"'
+      good: 'last="${arr[${#arr[@]}-1]}"'
+    tags: [bash, bash4]
+
+  - id: bash4-negative-subscript-other
+    name: "Negative array subscript other than -1 (bash 4.3+)"
+    description: |
+      Negative array indices like ${arr[-2]} require bash 4.3+.
+      These require manual conversion.
+    severity: error
+    pattern: '\$\{[a-zA-Z_][a-zA-Z0-9_]*\[-[2-9]\d*\]\}'
+    fix_type: suggest
+    fix_template: '${arr[${#arr[@]}-N]} where N is the offset'
+    examples:
+      bad: 'second_last="${arr[-2]}"'
+      good: 'second_last="${arr[${#arr[@]}-2]}"'
+    tags: [bash, bash4]
+
+  - id: bash43-nameref
+    name: "nameref declare -n (bash 4.3+)"
+    description: |
+      Name references (declare -n) require bash 4.3+.
+    severity: error
+    pattern: 'declare\s+-n\s'
+    fix_type: suggest
+    fix_template: "Use eval or indirect expansion ${!var}"
+    tags: [bash, bash4]
+
+  # echo portability
+
+  - id: echo-escape
+    name: "echo -e (escape sequences)"
+    description: |
+      echo -e is not portable across shells and platforms.
+      Use printf for portable escape sequence handling.
+    severity: warning
+    pattern: 'echo\s+-e\s+'
+    fix_type: replace
+    fix_template: 'printf "%b\\n" '
+    examples:
+      bad: 'echo -e "line1\nline2"'
+      good: 'printf "%b\n" "line1\nline2"'
+    tags: [bash, echo]
+    references:
+      - https://www.oreilly.com/library/view/bash-cookbook/0596526784/ch15s06.html
+
+  - id: echo-no-newline
+    name: "echo -n (no newline)"
+    description: |
+      echo -n behaviour varies across platforms.
+      Use printf for guaranteed no-newline output.
+    severity: info
+    pattern: 'echo\s+-n\s'
+    fix_type: suggest
+    fix_template: 'printf "%s"'
+    examples:
+      bad: 'echo -n "prompt: "'
+      good: 'printf "%s" "prompt: "'
+    tags: [bash, echo]
+
+  # Shebang
+
+  - id: shebang-bin-bash
+    name: "#!/bin/bash shebang"
+    description: |
+      /bin/bash may not exist or may be an old version on some systems.
+      Use #!/usr/bin/env bash for better portability.
+    severity: info
+    pattern: '^#!/bin/bash'
+    fix_type: replace
+    fix_template: "#!/usr/bin/env bash"
+    examples:
+      bad: "#!/bin/bash"
+      good: "#!/usr/bin/env bash"
+    tags: [bash, shebang]
+    references:
+      - https://scriptingosx.com/2022/04/on-env-shebangs/
+
+  # getopt
+
+  - id: getopt-long-options
+    name: "getopt with long options"
+    description: |
+      GNU getopt supports long options, BSD getopt does not.
+      Use getopts for portability (short options only).
+    severity: warning
+    pattern: 'getopt\s+(.*--long|.*-l\s)'
+    fix_type: suggest
+    fix_template: "Use getopts or translate long options to short"
+    examples:
+      bad: 'OPTS=$(getopt -o h --long help -n "$0" -- "$@")'
+      good: |
+        while getopts "h" opt; do
+          case $opt in
+            h) show_help ;;
+          esac
+        done
+    tags: [bash, getopt]
+
+  # /proc paths
+
+  - id: proc-self-fd
+    name: "/proc/self/fd paths"
+    description: |
+      /proc/self/fd/ is Linux-specific. macOS uses /dev/fd/ instead.
+      Use /dev/fd/ which works on both platforms.
+    severity: error
+    pattern: '/proc/self/fd/'
+    fix_type: replace
+    fix_template: "/dev/fd/"
+    examples:
+      bad: 'diff /proc/self/fd/3 /proc/self/fd/4'
+      good: 'diff /dev/fd/3 /dev/fd/4'
+    tags: [bash, proc]
+
+  # awk
+
+  - id: gawk-command
+    name: "gawk command"
+    description: |
+      gawk is GNU awk, which may not be available on macOS by default.
+      Use awk for portability or check for gawk availability.
+    severity: warning
+    pattern: '\bgawk\b'
+    fix_type: suggest
+    fix_template: "Use awk (POSIX) or check for gawk availability"
+    tags: [bash, awk]
+
+  - id: awk-gensub
+    name: "awk gensub() function"
+    description: |
+      gensub() is gawk-specific and not available in BSD awk.
+      Use gsub() or sub() for portable substitution.
+    severity: error
+    pattern: '\bawk\b.*\bgensub\s*\('
+    fix_type: suggest
+    fix_template: "Use gsub() or sub() which are POSIX-compliant"
+    examples:
+      bad: 'awk ''{print gensub(/foo/, "bar", "g")}'''
+      good: 'awk ''{gsub(/foo/, "bar"); print}'''
+    tags: [bash, awk]

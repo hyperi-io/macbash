@@ -1,0 +1,164 @@
+# Project:   macbash
+# File:      .github/workflows/release.yml
+# Purpose:   Semantic release workflow with package building
+# Language:  YAML (GitHub Actions)
+#
+# License:   Apache-2.0
+# Copyright: (c) 2025 HyperSec Pty Ltd
+
+name: Release
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+env:
+  GO_VERSION: ">=1.23"
+
+jobs:
+  release:
+    name: Semantic Release
+    runs-on: ${{ vars.GH_RUNNER_DEFAULT || 'ubuntu-latest' }}
+    permissions:
+      contents: write
+      issues: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "lts/*"
+
+      - name: Install semantic-release
+        run: npm install -g semantic-release @semantic-release/changelog @semantic-release/git @semantic-release/exec
+
+      - name: Install nFPM (for deb/rpm packages)
+        run: |
+          go install github.com/goreleaser/nfpm/v2/cmd/nfpm@latest
+          nfpm --version
+
+      # Get the next version from semantic-release dry-run BEFORE building
+      - name: Get next version
+        id: version
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Run semantic-release in dry-run mode to determine next version
+          # Use grep -E (ERE) instead of grep -P (PCRE) for portability
+          NEXT_VERSION=$(npx semantic-release --dry-run 2>&1 | grep -oE 'next release version is [0-9]+\.[0-9]+\.[0-9]+' | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' || echo "")
+
+          if [ -z "$NEXT_VERSION" ]; then
+            # No release needed, use current version from git tags or dev
+            NEXT_VERSION=$(git describe --tags --abbrev=0 2>/dev/null | sed 's/^v//' || echo "dev")
+            echo "release_needed=false" >> $GITHUB_OUTPUT
+          else
+            echo "release_needed=true" >> $GITHUB_OUTPUT
+          fi
+
+          echo "version=$NEXT_VERSION" >> $GITHUB_OUTPUT
+          echo "Next version: $NEXT_VERSION"
+
+      - name: Build binaries
+        run: |
+          mkdir -p dist
+          VERSION=${{ steps.version.outputs.version }}
+          COMMIT=${GITHUB_SHA:-unknown}
+          BUILD_TIME=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+          LDFLAGS="-s -w -X main.version=${VERSION} -X main.commit=${COMMIT} -X main.buildTime=${BUILD_TIME}"
+
+          echo "Building version: $VERSION"
+
+          # Linux
+          GOOS=linux GOARCH=amd64 go build -ldflags="${LDFLAGS}" -o dist/macbash-linux-amd64 ./cmd/macbash
+          GOOS=linux GOARCH=arm64 go build -ldflags="${LDFLAGS}" -o dist/macbash-linux-arm64 ./cmd/macbash
+
+          # macOS
+          GOOS=darwin GOARCH=amd64 go build -ldflags="${LDFLAGS}" -o dist/macbash-darwin-amd64 ./cmd/macbash
+          GOOS=darwin GOARCH=arm64 go build -ldflags="${LDFLAGS}" -o dist/macbash-darwin-arm64 ./cmd/macbash
+
+          # Verify version in binary
+          ./dist/macbash-linux-amd64 --version
+
+      - name: Create tar.gz archives
+        run: |
+          VERSION=${{ steps.version.outputs.version }}
+          cd dist
+
+          # Create tar.gz for each platform (includes binary + README)
+          for binary in macbash-*; do
+            platform=${binary#macbash-}
+            mkdir -p "macbash-${VERSION}-${platform}"
+            cp "$binary" "macbash-${VERSION}-${platform}/macbash"
+            cp ../README.md "macbash-${VERSION}-${platform}/"
+            tar czf "macbash-${VERSION}-${platform}.tar.gz" "macbash-${VERSION}-${platform}"
+            rm -rf "macbash-${VERSION}-${platform}"
+
+            # Calculate SHA256 for Homebrew
+            sha256sum "macbash-${VERSION}-${platform}.tar.gz" >> checksums.txt
+          done
+
+          # Show what we built
+          ls -la
+          cat checksums.txt
+
+      - name: Build Linux packages (deb/rpm)
+        if: steps.version.outputs.release_needed == 'true'
+        run: |
+          VERSION=${{ steps.version.outputs.version }}
+          chmod +x packaging/scripts/*.sh
+
+          # Build amd64 packages
+          export GOARCH=amd64
+          export VERSION=$VERSION
+          envsubst < packaging/nfpm.yaml > /tmp/nfpm-amd64.yaml
+          nfpm package --packager deb --config /tmp/nfpm-amd64.yaml --target dist/
+          nfpm package --packager rpm --config /tmp/nfpm-amd64.yaml --target dist/
+
+          # Build arm64 packages
+          export GOARCH=arm64
+          envsubst < packaging/nfpm.yaml > /tmp/nfpm-arm64.yaml
+          nfpm package --packager deb --config /tmp/nfpm-arm64.yaml --target dist/
+          nfpm package --packager rpm --config /tmp/nfpm-arm64.yaml --target dist/
+
+          # List packages
+          ls -la dist/*.deb dist/*.rpm
+
+      - name: Generate Homebrew formula
+        if: steps.version.outputs.release_needed == 'true'
+        run: |
+          VERSION=${{ steps.version.outputs.version }}
+          cd dist
+
+          # Get SHA256 sums
+          SHA256_DARWIN_AMD64=$(grep "darwin-amd64" checksums.txt | cut -d' ' -f1)
+          SHA256_DARWIN_ARM64=$(grep "darwin-arm64" checksums.txt | cut -d' ' -f1)
+          SHA256_LINUX_AMD64=$(grep "linux-amd64" checksums.txt | cut -d' ' -f1)
+          SHA256_LINUX_ARM64=$(grep "linux-arm64" checksums.txt | cut -d' ' -f1)
+
+          # Generate the formula from template
+          sed -e "s/\${VERSION}/$VERSION/g" \
+              -e "s/\${SHA256_DARWIN_AMD64}/$SHA256_DARWIN_AMD64/g" \
+              -e "s/\${SHA256_DARWIN_ARM64}/$SHA256_DARWIN_ARM64/g" \
+              -e "s/\${SHA256_LINUX_AMD64}/$SHA256_LINUX_AMD64/g" \
+              -e "s/\${SHA256_LINUX_ARM64}/$SHA256_LINUX_ARM64/g" \
+              ../packaging/homebrew/macbash.rb > macbash.rb
+
+          cat macbash.rb
+
+      - name: Run semantic-release
+        if: steps.version.outputs.release_needed == 'true'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: semantic-release

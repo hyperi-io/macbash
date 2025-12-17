@@ -1,0 +1,43 @@
+{
+  "branches": ["main"],
+  "plugins": [
+    "@semantic-release/commit-analyzer",
+    "@semantic-release/release-notes-generator",
+    [
+      "@semantic-release/changelog",
+      {
+        "changelogFile": "CHANGELOG.md"
+      }
+    ],
+    [
+      "@semantic-release/exec",
+      {
+        "prepareCmd": "echo ${nextRelease.version} > VERSION"
+      }
+    ],
+    [
+      "@semantic-release/git",
+      {
+        "assets": ["CHANGELOG.md", "VERSION"],
+        "message": "chore(release): ${nextRelease.version} [skip ci]\n\n${nextRelease.notes}"
+      }
+    ],
+    [
+      "@semantic-release/github",
+      {
+        "assets": [
+          { "path": "dist/macbash-*-linux-amd64.tar.gz", "label": "macbash-linux-amd64.tar.gz" },
+          { "path": "dist/macbash-*-linux-arm64.tar.gz", "label": "macbash-linux-arm64.tar.gz" },
+          { "path": "dist/macbash-*-darwin-amd64.tar.gz", "label": "macbash-darwin-amd64.tar.gz" },
+          { "path": "dist/macbash-*-darwin-arm64.tar.gz", "label": "macbash-darwin-arm64.tar.gz" },
+          { "path": "dist/macbash_*_amd64.deb", "label": "macbash-amd64.deb" },
+          { "path": "dist/macbash_*_arm64.deb", "label": "macbash-arm64.deb" },
+          { "path": "dist/macbash-*.x86_64.rpm", "label": "macbash-x86_64.rpm" },
+          { "path": "dist/macbash-*.aarch64.rpm", "label": "macbash-aarch64.rpm" },
+          { "path": "dist/macbash.rb", "label": "macbash.rb (Homebrew formula)" },
+          { "path": "dist/checksums.txt", "label": "checksums.txt" }
+        ]
+      }
+    ]
+  ]
+}

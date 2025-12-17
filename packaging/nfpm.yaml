@@ -1,0 +1,56 @@
+# Project:   macbash
+# File:      packaging/nfpm.yaml
+# Purpose:   nFPM configuration for building deb/rpm/apk packages
+# Language:  YAML
+#
+# License:   Apache-2.0
+# Copyright: (c) 2025 HyperSec Pty Ltd
+
+# nFPM configuration - https://nfpm.goreleaser.com/
+name: macbash
+arch: "${GOARCH}"
+platform: linux
+version: "${VERSION}"
+version_schema: semver
+
+maintainer: "HyperSec <support@hypersec.io>"
+description: |
+  macbash - Bash script compatibility checker for macOS
+  Detects GNU/Linux-specific bash constructs that won't work on macOS
+  and can auto-fix many issues for cross-platform compatibility.
+vendor: "HyperSec Pty Ltd"
+homepage: "https://github.com/hypersec-io/macbash"
+license: "Apache-2.0"
+section: devel
+priority: optional
+
+# Package contents
+contents:
+  # Binary installation
+  - src: ./dist/macbash-linux-${GOARCH}
+    dst: /usr/bin/macbash
+    file_info:
+      mode: 0755
+
+  # Optional: user-local installation support via alternatives
+  # Users can run: update-alternatives --install /usr/local/bin/macbash macbash /usr/bin/macbash 100
+
+# Scripts
+scripts:
+  postinstall: ./packaging/scripts/postinstall.sh
+  preremove: ./packaging/scripts/preremove.sh
+
+# RPM-specific settings
+rpm:
+  group: Development/Tools
+  summary: Bash script compatibility checker for macOS
+  compression: xz
+
+# Deb-specific settings
+deb:
+  compression: xz
+
+# APK-specific settings (Alpine Linux)
+apk:
+  signature:
+    key_file: ""  # No signing by default
