@@ -1,3 +1,11 @@
+# 1.0.0 (2026-02-19)
+
+
+### Features
+
+* add new rules, shebang-conditional matching, and here-doc skipping ([44c83d5](https://github.com/hyperi-io/macbash/commit/44c83d5645a74764be99f82143a36107f9b86c56))
+* initial release ([fd96d71](https://github.com/hyperi-io/macbash/commit/fd96d71a43988b2a927a4e36eaf7735e6503d080))
+
 # 1.0.0 (2025-12-17)
 
 
