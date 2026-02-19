@@ -32,6 +32,7 @@ type Rule struct {
 	Severity        Severity `yaml:"severity"`
 	Pattern         string   `yaml:"pattern"`
 	NegativePattern string   `yaml:"negative_pattern,omitempty"`
+	ShebangMatch    string   `yaml:"shebang_match,omitempty"`
 	FixType         FixType  `yaml:"fix_type"`
 	FixTemplate     string   `yaml:"fix_template,omitempty"`
 	WhyUnfixable    string   `yaml:"why_unfixable,omitempty"`

@@ -102,6 +102,13 @@ func validateRule(r *Rule) error {
 		}
 	}
 
+	// Validate shebang match pattern if present
+	if r.ShebangMatch != "" {
+		if _, err := regexp.Compile(r.ShebangMatch); err != nil {
+			return fmt.Errorf("rule %s has invalid shebang_match: %w", r.ID, err)
+		}
+	}
+
 	// Validate severity
 	switch r.Severity {
 	case SeverityError, SeverityWarning, SeverityInfo:

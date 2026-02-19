@@ -26,6 +26,7 @@ type compiledRule struct {
 	rule     *rules.Rule
 	pattern  *regexp.Regexp
 	negative *regexp.Regexp
+	shebang  *regexp.Regexp
 }
 
 func New(ruleSet *rules.RuleSet) (*Scanner, error) {
@@ -52,6 +53,13 @@ func New(ruleSet *rules.RuleSet) (*Scanner, error) {
 			}
 		}
 
+		if r.ShebangMatch != "" {
+			cr.shebang, err = regexp.Compile(r.ShebangMatch)
+			if err != nil {
+				return nil, err
+			}
+		}
+
 		s.compiled[r.ID] = cr
 	}
 
@@ -68,10 +76,33 @@ func (s *Scanner) ScanFile(path string) ([]rules.Match, error) {
 	var matches []rules.Match
 	scanner := bufio.NewScanner(file)
 	lineNum := 0
+	shebang := ""
+	inHereDoc := false
+	hereDocDelim := ""
 
 	for scanner.Scan() {
 		lineNum++
 		line := scanner.Text()
+
+		// Capture shebang from the first line
+		if lineNum == 1 && strings.HasPrefix(line, "#!") {
+			shebang = line
+		}
+
+		// Track here-document boundaries
+		if inHereDoc {
+			if strings.TrimSpace(line) == hereDocDelim {
+				inHereDoc = false
+				hereDocDelim = ""
+			}
+			continue
+		}
+
+		// Detect here-document start
+		if hd := detectHereDoc(line); hd != "" {
+			inHereDoc = true
+			hereDocDelim = hd
+		}
 
 		// Skip empty lines and pure comment lines (for efficiency)
 		trimmed := strings.TrimSpace(line)
@@ -81,6 +112,11 @@ func (s *Scanner) ScanFile(path string) ([]rules.Match, error) {
 
 		// Check each rule
 		for _, cr := range s.compiled {
+			// Skip if rule requires a specific shebang and file doesn't match
+			if cr.shebang != nil && !cr.shebang.MatchString(shebang) {
+				continue
+			}
+
 			// Skip if line is a comment and pattern doesn't explicitly target comments
 			if strings.HasPrefix(trimmed, "#") && !strings.HasPrefix(cr.rule.Pattern, "^#") {
 				continue
@@ -172,4 +208,16 @@ func GroupByFile(matches []rules.Match) map[string][]rules.Match {
 		grouped[m.File] = append(grouped[m.File], m)
 	}
 	return grouped
+}
+
+// detectHereDoc checks if a line starts a here-document and returns the
+// delimiter, or empty string if none found. Handles <<EOF, <<'EOF', <<"EOF",
+// <<-EOF, and <<-'EOF' forms.
+func detectHereDoc(line string) string {
+	re := regexp.MustCompile(`<<-?\s*['"]?(\w+)['"]?`)
+	matches := re.FindStringSubmatch(line)
+	if matches == nil {
+		return ""
+	}
+	return matches[1]
 }
