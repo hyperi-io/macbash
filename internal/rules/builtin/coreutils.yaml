@@ -304,8 +304,10 @@ rules:
     description: |
       The timeout command is part of GNU coreutils and not available on macOS.
       Install via 'brew install coreutils' and use gtimeout, or use alternatives.
+      Note: Only flags standalone 'timeout' as a command, not --timeout flags.
     severity: error
     pattern: '\btimeout\s+(\d)'
+    negative_pattern: '-timeout'
     fix_type: replace
     fix_template: "gtimeout $1"
     examples:
@@ -352,3 +354,78 @@ rules:
       bad: "for i in $(seq 1 10); do echo $i; done"
       good: "for i in {1..10}; do echo $i; done"
     tags: [coreutils, seq]
+
+  # tar
+
+  - id: tar-exclude-order
+    name: "tar --exclude after paths"
+    description: |
+      On GNU tar, --exclude can appear anywhere in the argument list.
+      On BSD tar (macOS), --exclude MUST come before the path arguments
+      or it will be silently ignored.
+    severity: warning
+    pattern: 'tar\s+[a-zA-Z]*[czx][a-zA-Z]*f\s+\S+\s+\S+.*--exclude'
+    fix_type: suggest
+    fix_template: "Move --exclude before the source paths: tar --exclude='pattern' czf archive.tar.gz dir/"
+    why_unfixable: "Argument order is context-dependent. Move all --exclude flags before any paths in the tar command"
+    examples:
+      bad: "tar czf archive.tar.gz src/ --exclude='*.o'"
+      good: "tar --exclude='*.o' czf archive.tar.gz src/"
+    tags: [coreutils, tar]
+
+  - id: tar-appledouble
+    name: "tar creates AppleDouble ._ files on macOS"
+    description: |
+      On macOS, tar includes AppleDouble resource fork files (._filename) by default.
+      Set COPYFILE_DISABLE=1 to prevent ._ files from being added to archives.
+      This is a macOS-specific issue that doesn't affect Linux.
+    severity: info
+    pattern: '\btar\s+[a-zA-Z]*c[a-zA-Z]*f\s'
+    negative_pattern: 'COPYFILE_DISABLE'
+    fix_type: suggest
+    fix_template: "COPYFILE_DISABLE=1 tar czf archive.tar.gz dir/"
+    examples:
+      bad: "tar czf archive.tar.gz dir/"
+      good: "COPYFILE_DISABLE=1 tar czf archive.tar.gz dir/"
+    tags: [coreutils, tar, macos]
+    references:
+      - https://superuser.com/questions/259703/get-mac-tar-to-stop-putting-files-in-it
+
+  # cp trailing slash
+
+  - id: cp-recursive-trailing-slash
+    name: "cp -R with trailing slash on source"
+    description: |
+      Trailing slash behaviour differs between GNU and BSD cp -R:
+      - GNU: cp -R dir/ target/ and cp -R dir target/ are equivalent
+      - BSD: cp -R dir/ target/ copies CONTENTS of dir into target
+              cp -R dir target/ copies dir itself into target
+      Remove the trailing slash for consistent behaviour across platforms.
+    severity: warning
+    pattern: 'cp\s+(-[a-zA-Z]*R[a-zA-Z]*|-R|--recursive)\s+\S+/\s'
+    fix_type: suggest
+    fix_template: "Remove trailing slash from source path for consistent cross-platform behaviour"
+    why_unfixable: "Depends on whether you want to copy the directory itself or its contents. Without trailing slash, behaviour is consistent across platforms"
+    examples:
+      bad: "cp -R src/ dest/"
+      good: "cp -R src dest/"
+    tags: [coreutils, cp]
+
+  # mktemp -t
+
+  - id: mktemp-t-prefix
+    name: "mktemp -t (semantic differences)"
+    description: |
+      mktemp -t has different semantics on GNU vs BSD:
+      - GNU: mktemp -t prefix creates /tmp/prefix.XXXXXXXXXX
+      - BSD: mktemp -t prefix creates a temp file with prefix but different naming
+      Use an explicit template path for portable behaviour.
+    severity: warning
+    pattern: 'mktemp\s+-t\s+'
+    fix_type: suggest
+    fix_template: 'mktemp /tmp/prefix.XXXXXX or mktemp "${TMPDIR:-/tmp}/prefix.XXXXXX"'
+    why_unfixable: "Replace mktemp -t prefix with mktemp \"${TMPDIR:-/tmp}/prefix.XXXXXX\" for portable behaviour"
+    examples:
+      bad: "TMPFILE=$(mktemp -t myapp)"
+      good: 'TMPFILE=$(mktemp "${TMPDIR:-/tmp}/myapp.XXXXXX")'
+    tags: [coreutils, mktemp]

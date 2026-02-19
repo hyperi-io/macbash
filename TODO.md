@@ -1,18 +1,9 @@
 # TODO
 
-## Rules to Add
-
-- tar `--exclude` order sensitivity
-- AppleDouble `._` file handling
-- `cp -R` trailing slash differences
-- `mktemp -t` semantic differences
-- `/bin/sh` scripts using bashisms
-
 ## Enhancements
 
-- Context-aware detection (skip patterns in comments, strings, here-docs)
-- AST parsing for complex bash constructs
-- More test coverage
+- AST-based scanning using mvdan.cc/sh/v3 for complex constructs (multi-line patterns, string/variable context)
+- Inline comment and quoted string skipping (currently skips full-comment lines and here-docs)
 
 ## Done
 
@@ -24,6 +15,16 @@
 - Console and JSON output
 - GitHub Actions CI
 - Package distribution (deb, rpm, Homebrew, install script)
+- tar `--exclude` order sensitivity rule
+- AppleDouble `._` file handling rule
+- `cp -R` trailing slash differences rule
+- `mktemp -t` semantic differences rule
+- `/bin/sh` bashism detection (shebang-conditional rules via `shebang_match`)
+- Fixed `timeout-command` false positive on `--timeout` flags
+- Context-aware detection: here-document skipping in scanner
+- Shebang-conditional rule support (`shebang_match` field)
+- POSIX compliance rules (9 bashism detectors for `/bin/sh` scripts)
+- Test coverage for shebang matching, here-doc skipping, timeout false positive
 
 ## References
 
