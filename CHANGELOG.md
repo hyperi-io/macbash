@@ -1,3 +1,10 @@
+# [1.2.0](https://github.com/hyperi-io/macbash/compare/v1.1.0...v1.2.0) (2026-03-02)
+
+
+### Features
+
+* add GitHub Action for CI integration ([fe8a311](https://github.com/hyperi-io/macbash/commit/fe8a311a8f472660f8c091713b55665ae89402c7))
+
 # [1.1.0](https://github.com/hyperi-io/macbash/compare/v1.0.0...v1.1.0) (2026-02-19)
 
 
