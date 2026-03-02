@@ -1,0 +1,66 @@
+# Project:   macbash
+# File:      action.yml
+# Purpose:   GitHub Action to check bash scripts for macOS compatibility
+# Language:  YAML (GitHub Actions)
+#
+# License:   Apache-2.0
+# Copyright: (c) 2026 HYPERI PTY LIMITED
+
+name: 'macbash'
+description: 'Check bash scripts for macOS compatibility and auto-fix them for cross-platform portability'
+author: 'HYPERI PTY LIMITED'
+
+branding:
+  icon: 'terminal'
+  color: 'blue'
+
+inputs:
+  version:
+    description: 'macbash version to install (without v prefix)'
+    required: false
+    default: '1.1.0'
+  paths:
+    description: 'Files or glob patterns to check (space-separated)'
+    required: false
+    default: '**/*.sh'
+  severity:
+    description: 'Minimum severity level: error, warning, info'
+    required: false
+    default: 'warning'
+  format:
+    description: 'Output format: text, json'
+    required: false
+    default: 'text'
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Install macbash
+      shell: bash
+      env:
+        MACBASH_VERSION: ${{ inputs.version }}
+      run: |
+        OS="$(uname -s | tr '[:upper:]' '[:lower:]')"
+        ARCH="$(uname -m)"
+        case "$ARCH" in
+            x86_64)  ARCH="amd64" ;;
+            aarch64) ARCH="arm64" ;;
+        esac
+
+        TARBALL="macbash-${MACBASH_VERSION}-${OS}-${ARCH}.tar.gz"
+        URL="https://github.com/hyperi-io/macbash/releases/download/v${MACBASH_VERSION}/${TARBALL}"
+
+        echo "Installing macbash v${MACBASH_VERSION} (${OS}/${ARCH})..."
+        curl -fsSL "$URL" -o "/tmp/${TARBALL}"
+        tar xzf "/tmp/${TARBALL}" -C /tmp/
+        install -m 755 "/tmp/macbash-${MACBASH_VERSION}-${OS}-${ARCH}/macbash" /usr/local/bin/macbash
+        rm -rf "/tmp/${TARBALL}" "/tmp/macbash-${MACBASH_VERSION}-${OS}-${ARCH}"
+
+        macbash --version
+
+    - name: Run macbash
+      shell: bash
+      run: |
+        macbash --severity "${{ inputs.severity }}" \
+                --format "${{ inputs.format }}" \
+                ${{ inputs.paths }}
