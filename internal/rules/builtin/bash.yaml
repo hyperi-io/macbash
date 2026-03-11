@@ -17,7 +17,7 @@ rules:
       declare -A creates associative arrays, which require bash 4.0+.
       macOS ships with bash 3.2 by default due to GPLv3 licensing.
     severity: error
-    pattern: 'declare\s+-A\s'
+    pattern: '(declare|local)\s+-[a-zA-Z]*A[a-zA-Z]*\s'
     fix_type: suggest
     fix_template: "Use indexed arrays with naming convention, or require bash 4+"
     why_unfixable: "Associative arrays need complete rewrite. Alternatives: 1) Use indexed arrays with key_value naming, 2) Use external file/awk, 3) Add shebang #!/usr/bin/env bash and require brew install bash on macOS"
@@ -27,6 +27,20 @@ rules:
     tags: [bash, bash4]
     references:
       - https://tldp.org/LDP/abs/html/bashver4.html
+    test_cases:
+      should_match:
+        - "declare -A mymap"
+        - "declare -A METADATA"
+        - "  declare -A config"
+        - "local -A mymap"
+        - "declare -gA global_map"
+      should_not_match:
+        - "declare -a myarray"
+        - "declare -i count"
+        - "declare -r readonly_var"
+        - "declare -x EXPORTED"
+        - "declare myvar"
+        - "DECLARE_A_THING=true"
 
   - id: bash4-case-modification
     name: "Case modification ${var,,} ${var^^} (bash 4+)"
@@ -42,6 +56,19 @@ rules:
       bad: 'lower="${var,,}"'
       good: 'lower=$(echo "$var" | tr "[:upper:]" "[:lower:]")'
     tags: [bash, bash4]
+    test_cases:
+      should_match:
+        - 'echo "${INPUT,,}"'
+        - 'echo "${INPUT^^}"'
+        - 'lower="${var,,}"'
+        - 'UPPER="${name^^}"'
+        - '  result="${MY_VAR,,}"'
+      should_not_match:
+        - 'echo "${var}"'
+        - 'echo "${var:-default}"'
+        - 'echo "${var:0:5}"'
+        - 'echo "${#var}"'
+        - 'echo "${var/old/new}"'
 
   - id: bash4-mapfile
     name: "mapfile/readarray (bash 4+)"
@@ -49,7 +76,7 @@ rules:
       mapfile (aka readarray) requires bash 4.0+.
       Use a while-read loop for portable array reading.
     severity: error
-    pattern: '\b(mapfile|readarray)\b'
+    pattern: '^\s*(mapfile|readarray)\s'
     fix_type: suggest
     fix_template: 'while IFS= read -r line; do arr+=("$line"); done < file'
     why_unfixable: "Requires multi-line replacement. Convert 'mapfile -t arr < file' to: arr=(); while IFS= read -r line; do arr+=(\"$line\"); done < file"
@@ -60,16 +87,40 @@ rules:
           lines+=("$line")
         done < file.txt
     tags: [bash, bash4]
+    test_cases:
+      should_match:
+        - "mapfile -t lines < file.txt"
+        - "readarray -t arr < input"
+        - "mapfile lines < /dev/stdin"
+        - "  mapfile -t -d '' arr"
+        - "readarray arr <<< \"$data\""
+      should_not_match:
+        - "MAPFILE=/path/to/file"
+        - "echo $MAPFILE"
+        - "${MAPFILE}"
+        - "my_mapfile_func() {"
+        - "export MAPFILE_PATH=/tmp"
+        - "unmapfile something"
+        - 'result=$(mapfile_wrapper arg)'
 
   - id: bash4-coproc
     name: "coproc (bash 4+)"
     description: |
       The coproc keyword for coprocesses requires bash 4.0+.
     severity: error
-    pattern: '\bcoproc\b'
+    pattern: '^\s*coproc\s'
     fix_type: suggest
     fix_template: "Use named pipes (mkfifo) or process substitution"
     tags: [bash, bash4]
+    test_cases:
+      should_match:
+        - "coproc myproc { cat; }"
+        - "coproc cat"
+        - "  coproc BC { bc -l; }"
+      should_not_match:
+        - "COPROC_VAR=true"
+        - "mycoproc_func() {"
+        - "echo 'use coproc for coprocesses'"
 
   - id: bash4-pipe-stderr
     name: "|& pipe stderr (bash 4+)"
@@ -77,13 +128,21 @@ rules:
       The |& operator (pipe stdout and stderr) requires bash 4.0+.
       Use 2>&1 | for portable stderr redirection.
     severity: error
-    pattern: '\|&'
+    pattern: '\|&\s*\w'
     fix_type: replace
     fix_template: "2>&1 |"
     examples:
       bad: "command |& grep error"
       good: "command 2>&1 | grep error"
     tags: [bash, bash4]
+    test_cases:
+      should_match:
+        - "command |& grep error"
+        - "ls /nonexistent |& grep 'No such'"
+        - "  make |& tee build.log"
+      should_not_match:
+        - "command 2>&1 | grep error"
+        - "echo 'pipe operators: | |&'"
 
   - id: bash4-negative-subscript
     name: "Negative array subscript (bash 4.3+)"
@@ -98,6 +157,18 @@ rules:
       bad: 'last="${arr[-1]}"'
       good: 'last="${arr[${#arr[@]}-1]}"'
     tags: [bash, bash4]
+    test_cases:
+      should_match:
+        - 'echo "${arr[-1]}"'
+        - 'last="${MY_ARRAY[-1]}"'
+        - '  val="${items[-1]}"'
+      should_not_match:
+        - 'echo "${arr[0]}"'
+        - 'echo "${arr[1]}"'
+        - 'echo "${arr[@]}"'
+        - 'echo "${arr[*]}"'
+        - 'echo "${arr[$i]}"'
+        - 'echo ${arr[${#arr[@]}-1]}'
 
   - id: bash4-negative-subscript-other
     name: "Negative array subscript other than -1 (bash 4.3+)"
@@ -105,23 +176,45 @@ rules:
       Negative array indices like ${arr[-2]} require bash 4.3+.
       These require manual conversion.
     severity: error
-    pattern: '\$\{[a-zA-Z_][a-zA-Z0-9_]*\[-[2-9]\d*\]\}'
+    pattern: '\$\{[a-zA-Z_][a-zA-Z0-9_]*\[-([2-9]|[1-9][0-9]+)\]\}'
     fix_type: suggest
     fix_template: '${arr[${#arr[@]}-N]} where N is the offset'
     examples:
       bad: 'second_last="${arr[-2]}"'
       good: 'second_last="${arr[${#arr[@]}-2]}"'
     tags: [bash, bash4]
+    test_cases:
+      should_match:
+        - 'echo "${arr[-2]}"'
+        - 'echo "${arr[-3]}"'
+        - 'echo "${arr[-10]}"'
+      should_not_match:
+        - 'echo "${arr[-1]}"'
+        - 'echo "${arr[0]}"'
+        - 'echo "${arr[2]}"'
 
   - id: bash43-nameref
     name: "nameref declare -n (bash 4.3+)"
     description: |
       Name references (declare -n) require bash 4.3+.
     severity: error
-    pattern: 'declare\s+-n\s'
+    pattern: '(declare|local)\s+-[a-zA-Z]*n[a-zA-Z]*\s'
     fix_type: suggest
     fix_template: "Use eval or indirect expansion ${!var}"
     tags: [bash, bash4]
+    test_cases:
+      should_match:
+        - "declare -n ref=myvar"
+        - "  declare -n alias=target"
+        - "local -n ref=var"
+        - "declare -gn ref=var"
+      should_not_match:
+        - "declare -i num"
+        - "declare -a arr"
+        - "declare -A map"
+        - "declare -r const"
+        - "declare myvar"
+        - "DECLARE_N=true"
 
   # echo portability
 
@@ -131,7 +224,7 @@ rules:
       echo -e is not portable across shells and platforms.
       Use printf for portable escape sequence handling.
     severity: warning
-    pattern: 'echo\s+-e\s+'
+    pattern: '\becho\s+-e\s+'
     fix_type: replace
     fix_template: 'printf "%b\\n" '
     examples:
@@ -140,6 +233,17 @@ rules:
     tags: [bash, echo]
     references:
       - https://www.oreilly.com/library/view/bash-cookbook/0596526784/ch15s06.html
+    test_cases:
+      should_match:
+        - 'echo -e "line1\nline2"'
+        - "echo -e 'tabs\\there'"
+        - '  echo -e "$MSG\n"'
+      should_not_match:
+        - 'echo "normal message"'
+        - 'echo -n "no newline"'
+        - 'echo message'
+        - 'printf "%b\n" "line1\nline2"'
+        - 'ECHO_E=true'
 
   - id: echo-no-newline
     name: "echo -n (no newline)"
@@ -147,13 +251,22 @@ rules:
       echo -n behaviour varies across platforms.
       Use printf for guaranteed no-newline output.
     severity: info
-    pattern: 'echo\s+-n\s'
+    pattern: '\becho\s+-n\s'
     fix_type: suggest
     fix_template: 'printf "%s"'
     examples:
       bad: 'echo -n "prompt: "'
       good: 'printf "%s" "prompt: "'
     tags: [bash, echo]
+    test_cases:
+      should_match:
+        - 'echo -n "prompt: "'
+        - "echo -n 'Enter value: '"
+        - '  echo -n "$prefix"'
+      should_not_match:
+        - 'echo "with newline"'
+        - 'echo -e "escape"'
+        - 'printf "%s" "prompt"'
 
   # Shebang
 
@@ -172,6 +285,16 @@ rules:
     tags: [bash, shebang]
     references:
       - https://scriptingosx.com/2022/04/on-env-shebangs/
+    test_cases:
+      should_match:
+        - "#!/bin/bash"
+        - "#!/bin/bash -e"
+        - "#!/bin/bash -eu"
+      should_not_match:
+        - "#!/usr/bin/env bash"
+        - "#!/bin/sh"
+        - "#!/usr/bin/bash"
+        - " #!/bin/bash"
 
   # getopt
 
@@ -181,7 +304,7 @@ rules:
       GNU getopt supports long options, BSD getopt does not.
       Use getopts for portability (short options only).
     severity: warning
-    pattern: 'getopt\s+(.*--long|.*-l\s)'
+    pattern: '\bgetopt\s+(.*--long|.*-l\s)'
     fix_type: suggest
     fix_template: "Use getopts or translate long options to short"
     examples:
@@ -193,6 +316,14 @@ rules:
           esac
         done
     tags: [bash, getopt]
+    test_cases:
+      should_match:
+        - 'OPTS=$(getopt -o h --long help -n "$0" -- "$@")'
+        - 'getopt -o hv --long help,verbose -- "$@"'
+        - 'getopt -l help,version -o hv -- "$@"'
+      should_not_match:
+        - 'getopts "hv" opt'
+        - 'getopt -o hv -- "$@"'
 
   # /proc paths
 
@@ -209,6 +340,14 @@ rules:
       bad: 'diff /proc/self/fd/3 /proc/self/fd/4'
       good: 'diff /dev/fd/3 /dev/fd/4'
     tags: [bash, proc]
+    test_cases:
+      should_match:
+        - "diff /proc/self/fd/3 /proc/self/fd/4"
+        - 'cat /proc/self/fd/0'
+        - 'exec 3>/proc/self/fd/1'
+      should_not_match:
+        - "diff /dev/fd/3 /dev/fd/4"
+        - 'cat /proc/cpuinfo'
 
   # awk
 
@@ -218,10 +357,21 @@ rules:
       gawk is GNU awk, which may not be available on macOS by default.
       Use awk for portability or check for gawk availability.
     severity: warning
-    pattern: '\bgawk\b'
+    pattern: '^\s*gawk\s|\|\s*gawk\s|\$\(gawk\s'
     fix_type: suggest
     fix_template: "Use awk (POSIX) or check for gawk availability"
     tags: [bash, awk]
+    test_cases:
+      should_match:
+        - "gawk '{print $1}' file"
+        - "  gawk -F: '{print $1}' /etc/passwd"
+        - "cat file | gawk '{print}'"
+        - 'result=$(gawk "/pattern/" file)'
+      should_not_match:
+        - "awk '{print $1}' file"
+        - "mawk '{print}' file"
+        - "GAWK_PATH=/usr/bin/gawk"
+        - "echo gawk"
 
   - id: awk-gensub
     name: "awk gensub() function"
@@ -236,3 +386,161 @@ rules:
       bad: 'awk ''{print gensub(/foo/, "bar", "g")}'''
       good: 'awk ''{gsub(/foo/, "bar"); print}'''
     tags: [bash, awk]
+    test_cases:
+      should_match:
+        - "awk '{print gensub(/foo/, \"bar\", \"g\")}' file"
+        - "awk 'BEGIN{} {x=gensub(/a/,\"b\",\"g\")}' f"
+        - '  awk "{print gensub(/pat/, \"rep\", 1)}" file'
+      should_not_match:
+        - "awk '{gsub(/foo/, \"bar\"); print}' file"
+        - "awk '{sub(/foo/, \"bar\")}' file"
+        - "gawk '{print gensub(/foo/, \"bar\", \"g\")}' file"
+
+  # Bash 4+ features (additional)
+
+  - id: bash4-globstar
+    name: "globstar ** pattern (bash 4+)"
+    description: |
+      The ** glob pattern (recursive globbing) requires bash 4.0+ with
+      'shopt -s globstar'. Not available in bash 3.2.
+      Use find with -name instead for portable recursive file matching.
+    severity: error
+    pattern: '^\s*shopt\s+(-[a-zA-Z]\s+)*-s\s+globstar'
+    fix_type: suggest
+    fix_template: 'Use find . -name "pattern" instead of **'
+    examples:
+      bad: 'shopt -s globstar'
+      good: 'find . -name "*.txt"'
+    tags: [bash, bash4]
+    test_cases:
+      should_match:
+        - 'shopt -s globstar'
+        - '  shopt -s globstar'
+        - 'shopt -q -s globstar'
+      should_not_match:
+        - 'shopt -u globstar'
+        - 'shopt -s nullglob'
+        - 'shopt -s extglob'
+        - 'GLOBSTAR=true'
+        - '# shopt -s globstar'
+
+  - id: bash4-lastpipe
+    name: "lastpipe option (bash 4.2+)"
+    description: |
+      'shopt -s lastpipe' requires bash 4.2+. It allows the last command
+      in a pipeline to run in the current shell (not a subshell).
+    severity: error
+    pattern: '^\s*shopt\s+(-[a-zA-Z]\s+)*-s\s+lastpipe'
+    fix_type: suggest
+    fix_template: "Use process substitution or temporary files instead"
+    examples:
+      bad: 'shopt -s lastpipe'
+      good: 'result=$(command | tail -1)'
+    tags: [bash, bash4]
+    test_cases:
+      should_match:
+        - 'shopt -s lastpipe'
+        - '  shopt -s lastpipe'
+      should_not_match:
+        - 'shopt -u lastpipe'
+        - 'shopt -s globstar'
+        - 'LASTPIPE=true'
+
+  - id: bash42-test-v
+    name: "test -v variable (bash 4.2+)"
+    description: |
+      The -v test operator (check if variable is set) requires bash 4.2+.
+      Use [ -n "${var+x}" ] or [ "${var:-unset}" != "unset" ] instead.
+    severity: error
+    pattern: '\[\s+-v\s+\w+\s*\]|\[\[\s+-v\s+\w+\s*\]\]'
+    fix_type: suggest
+    fix_template: '[ -n "${var+x}" ]'
+    why_unfixable: "Variable name is context-dependent. Replace [ -v varname ] with [ -n \"${varname+x}\" ]"
+    examples:
+      bad: '[ -v MY_VAR ]'
+      good: '[ -n "${MY_VAR+x}" ]'
+    tags: [bash, bash4]
+    test_cases:
+      should_match:
+        - '[ -v MY_VAR ]'
+        - '[[ -v MY_VAR ]]'
+        - 'if [ -v HOME ]; then'
+        - '  [ -v config_loaded ]'
+      should_not_match:
+        - '[ -n "${MY_VAR+x}" ]'
+        - '[ -f "$file" ]'
+        - '[ -d /tmp ]'
+        - 'test -v ignored'
+
+  - id: bash41-printf-datetime
+    name: "printf %(fmt)T datetime (bash 4.1+)"
+    description: |
+      printf's %(format)T for datetime formatting requires bash 4.1+.
+      Use the date command instead for portable datetime formatting.
+    severity: error
+    pattern: '\bprintf\s+.*%\([^)]+\)T'
+    fix_type: suggest
+    fix_template: 'date +"format"'
+    examples:
+      bad: 'printf "%(%Y-%m-%d)T\n" -1'
+      good: 'date +"%Y-%m-%d"'
+    tags: [bash, bash4]
+    test_cases:
+      should_match:
+        - 'printf "%(%Y-%m-%d)T\n" -1'
+        - 'printf "%(%H:%M:%S)T\n"'
+        - '  printf "Today is %(%A)T\n" -1'
+      should_not_match:
+        - 'printf "%s\n" "$date"'
+        - 'printf "%d\n" 42'
+        - 'date +"%Y-%m-%d"'
+
+  - id: bash42-declare-g
+    name: "declare -g global scope (bash 4.2+)"
+    description: |
+      declare -g (declare variable in global scope from within a function)
+      requires bash 4.2+. Not available in bash 3.2.
+    severity: error
+    pattern: '(declare|local)\s+-[a-zA-Z]*g[a-zA-Z]*\s'
+    negative_pattern: '(declare|local)\s+-[a-zA-Z]*A'
+    fix_type: suggest
+    fix_template: "Assign to global variable directly without declare -g"
+    examples:
+      bad: 'declare -g MY_GLOBAL="value"'
+      good: 'MY_GLOBAL="value"'
+    tags: [bash, bash4]
+    test_cases:
+      should_match:
+        - 'declare -g MY_GLOBAL="value"'
+        - '  declare -g counter=0'
+        - 'declare -gi num=5'
+        - 'declare -rg CONST="val"'
+      should_not_match:
+        - 'declare -a myarray'
+        - 'declare -i count'
+        - 'declare myvar'
+        - 'declare -gA global_map'
+
+  - id: bash-regex-quoting
+    name: "Quoted regex in =~ (bash 3.2+)"
+    description: |
+      In bash 3.2+, quoting the right-hand side of =~ makes it a literal
+      string match, not a regex. This changed from bash 3.1 where quotes
+      were allowed. Always use unquoted patterns with =~.
+    severity: warning
+    pattern: '=~\s+[''"]'
+    fix_type: suggest
+    fix_template: 'Use unquoted pattern: [[ $var =~ ^pattern$ ]]'
+    examples:
+      bad: '[[ $var =~ "^[0-9]+$" ]]'
+      good: '[[ $var =~ ^[0-9]+$ ]]'
+    tags: [bash, regex]
+    test_cases:
+      should_match:
+        - '[[ $var =~ "^[0-9]+$" ]]'
+        - "[[ $x =~ '^foo' ]]"
+        - '  [[ "$line" =~ "pattern" ]]'
+      should_not_match:
+        - '[[ $var =~ ^[0-9]+$ ]]'
+        - '[[ $var =~ [a-z] ]]'
+        - '[[ $var == "string" ]]'
