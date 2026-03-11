@@ -1,7 +1,7 @@
 # macbash
 
-[![CI](https://github.com/hypersec-io/macbash/actions/workflows/ci.yml/badge.svg)](https://github.com/hypersec-io/macbash/actions/workflows/ci.yml)
-[![Go](https://img.shields.io/badge/Go-1.23+-00ADD8?logo=go&logoColor=white)](https://go.dev/)
+[![CI](https://github.com/hyperi-io/macbash/actions/workflows/ci.yml/badge.svg)](https://github.com/hyperi-io/macbash/actions/workflows/ci.yml)
+[![Go](https://img.shields.io/badge/Go-1.26+-00ADD8?logo=go&logoColor=white)](https://go.dev/)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 
 Check and fix bash scripts so they work on macOS.  
@@ -11,21 +11,21 @@ Detects GNU/Linux-specific bash constructs that won't work on macOS. Can auto-fi
 
 ```bash
 # Quick install
-curl -fsSL https://raw.githubusercontent.com/hypersec-io/macbash/main/packaging/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/hyperi-io/macbash/main/packaging/install.sh | sh
 
 # Homebrew
-brew tap hypersec-io/tools && brew install macbash
+brew tap hyperi-io/macbash && brew install macbash
 
 # Debian/Ubuntu
-curl -LO https://github.com/hypersec-io/macbash/releases/latest/download/macbash_1.0.0_amd64.deb
-sudo dpkg -i macbash_1.0.0_amd64.deb
+curl -LO https://github.com/hyperi-io/macbash/releases/latest/download/macbash_amd64.deb
+sudo dpkg -i macbash_amd64.deb
 
 # RHEL/Fedora
-curl -LO https://github.com/hypersec-io/macbash/releases/latest/download/macbash-1.0.0-1.x86_64.rpm
-sudo rpm -i macbash-1.0.0-1.x86_64.rpm
+curl -LO https://github.com/hyperi-io/macbash/releases/latest/download/macbash_amd64.rpm
+sudo rpm -i macbash_amd64.rpm
 
 # From source
-go install github.com/hypersec-io/macbash/cmd/macbash@latest
+go install github.com/hyperi-io/macbash/cmd/macbash@latest
 ```
 
 ## Usage
@@ -98,7 +98,7 @@ rules:
 ```yaml
 - name: Check bash portability
   run: |
-    go install github.com/hypersec-io/macbash/cmd/macbash@latest
+    go install github.com/hyperi-io/macbash/cmd/macbash@latest
     macbash scripts/*.sh
 ```
 

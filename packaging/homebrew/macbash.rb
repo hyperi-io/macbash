@@ -4,7 +4,7 @@
 # Language:  Ruby
 #
 # License:   Apache-2.0
-# Copyright: (c) 2025 HyperSec Pty Ltd
+# Copyright: (c) 2025-2026 HYPERI PTY LIMITED
 
 class Macbash < Formula
   desc "Bash script compatibility checker for macOS"
