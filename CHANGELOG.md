@@ -1,3 +1,10 @@
+# [1.3.0](https://github.com/hyperi-io/macbash/compare/v1.2.0...v1.3.0) (2026-03-11)
+
+
+### Features
+
+* add Homebrew tap publishing to release workflow ([1fb000a](https://github.com/hyperi-io/macbash/commit/1fb000acd1e987fa8b529df13fa64c8f0b221c9e))
+
 # [1.2.0](https://github.com/hyperi-io/macbash/compare/v1.1.0...v1.2.0) (2026-03-02)
 
 
