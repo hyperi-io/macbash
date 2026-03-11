@@ -1,3 +1,10 @@
+# [1.5.0](https://github.com/hyperi-io/macbash/compare/v1.4.0...v1.5.0) (2026-03-11)
+
+
+### Features
+
+* rebrand HyperSec to HyperI across entire project ([1275c12](https://github.com/hyperi-io/macbash/commit/1275c124c9da729b577b4fbd93c18c2cc6a95203))
+
 # [1.4.0](https://github.com/hyperi-io/macbash/compare/v1.3.0...v1.4.0) (2026-03-11)
 
 
