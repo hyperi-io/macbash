@@ -162,3 +162,35 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: semantic-release
+
+      - name: Generate GitHub App token for tap repo
+        if: steps.version.outputs.release_needed == 'true'
+        id: app-token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ secrets.HOMEBREW_APP_ID }}
+          private-key: ${{ secrets.HOMEBREW_APP_PRIVATE_KEY }}
+          owner: hyperi-io
+          repositories: homebrew-macbash
+
+      - name: Publish Homebrew formula to tap
+        if: steps.version.outputs.release_needed == 'true'
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: |
+          VERSION=${{ steps.version.outputs.version }}
+
+          # Clone the tap repo using the app token
+          git clone "https://x-access-token:${GH_TOKEN}@github.com/hyperi-io/homebrew-macbash.git" /tmp/homebrew-macbash
+
+          # Copy the generated formula
+          mkdir -p /tmp/homebrew-macbash/Formula
+          cp dist/macbash.rb /tmp/homebrew-macbash/Formula/macbash.rb
+
+          # Commit and push
+          cd /tmp/homebrew-macbash
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add Formula/macbash.rb
+          git commit -m "Update macbash to ${VERSION}"
+          git push

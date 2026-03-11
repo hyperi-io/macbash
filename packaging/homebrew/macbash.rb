@@ -8,26 +8,26 @@
 
 class Macbash < Formula
   desc "Bash script compatibility checker for macOS"
-  homepage "https://github.com/hypersec-io/macbash"
+  homepage "https://github.com/hyperi-io/macbash"
   version "${VERSION}"
   license "Apache-2.0"
 
   on_macos do
     if Hardware::CPU.arm?
-      url "https://github.com/hypersec-io/macbash/releases/download/v${VERSION}/macbash-darwin-arm64.tar.gz"
+      url "https://github.com/hyperi-io/macbash/releases/download/v${VERSION}/macbash-darwin-arm64.tar.gz"
       sha256 "${SHA256_DARWIN_ARM64}"
     else
-      url "https://github.com/hypersec-io/macbash/releases/download/v${VERSION}/macbash-darwin-amd64.tar.gz"
+      url "https://github.com/hyperi-io/macbash/releases/download/v${VERSION}/macbash-darwin-amd64.tar.gz"
       sha256 "${SHA256_DARWIN_AMD64}"
     end
   end
 
   on_linux do
     if Hardware::CPU.arm?
-      url "https://github.com/hypersec-io/macbash/releases/download/v${VERSION}/macbash-linux-arm64.tar.gz"
+      url "https://github.com/hyperi-io/macbash/releases/download/v${VERSION}/macbash-linux-arm64.tar.gz"
       sha256 "${SHA256_LINUX_ARM64}"
     else
-      url "https://github.com/hypersec-io/macbash/releases/download/v${VERSION}/macbash-linux-amd64.tar.gz"
+      url "https://github.com/hyperi-io/macbash/releases/download/v${VERSION}/macbash-linux-amd64.tar.gz"
       sha256 "${SHA256_LINUX_AMD64}"
     end
   end
