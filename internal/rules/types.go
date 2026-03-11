@@ -38,13 +38,19 @@ type Rule struct {
 	WhyUnfixable    string   `yaml:"why_unfixable,omitempty"`
 	FixFunction     string   `yaml:"fix_function,omitempty"`
 	Examples        Examples `yaml:"examples,omitempty"`
-	Tags            []string `yaml:"tags,omitempty"`
-	References      []string `yaml:"references,omitempty"`
+	Tags            []string  `yaml:"tags,omitempty"`
+	References      []string  `yaml:"references,omitempty"`
+	TestCases       TestCases `yaml:"test_cases,omitempty"`
 }
 
 type Examples struct {
 	Bad  string `yaml:"bad,omitempty"`
 	Good string `yaml:"good,omitempty"`
+}
+
+type TestCases struct {
+	ShouldMatch    []string `yaml:"should_match,omitempty"`
+	ShouldNotMatch []string `yaml:"should_not_match,omitempty"`
 }
 
 type RuleSet struct {

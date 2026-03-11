@@ -18,10 +18,9 @@ rules:
       requires an argument after -i. Use 'sed -i.bak' for portability, or
       'sed -i '' for no backup on BSD.
     severity: error
-    pattern: 'sed\s+-i\s+([''"])'
-    negative_pattern: 'sed\s+-i[.'']'
-    fix_type: replace
-    fix_template: "sed -i.bak $1"
+    pattern: '\bsed\s+(-[a-zA-Z]*i)\s+([''"])'
+    fix_type: suggest
+    fix_template: "sed -i.bak"
     examples:
       bad: "sed -i 's/foo/bar/' file.txt"
       good: "sed -i.bak 's/foo/bar/' file.txt"
@@ -29,6 +28,18 @@ rules:
     references:
       - https://www.gnu.org/software/sed/manual/sed.html
       - https://www.johndcook.com/blog/2023/10/18/portable-sed-i/
+    test_cases:
+      should_match:
+        - "sed -i 's/foo/bar/' file.txt"
+        - 'sed -i "s/old/new/g" config.cfg'
+        - "  sed -i 's/a/b/' f.txt"
+        - "sed -Ei 's/foo/bar/' file.txt"
+      should_not_match:
+        - "sed -i.bak 's/foo/bar/' file.txt"
+        - "sed -i'' 's/foo/bar/' file.txt"
+        - "sed -i.orig 's/foo/bar/' file.txt"
+        - "sed 's/foo/bar/' file.txt"
+        - "sed -n 's/foo/bar/p' file.txt"
 
   - id: sed-extended-regex-r
     name: "sed -r (GNU extended regex)"
@@ -36,13 +47,23 @@ rules:
       GNU sed uses -r for extended regex, BSD sed uses -E.
       Use -E which works on both (GNU sed also accepts -E).
     severity: warning
-    pattern: 'sed\s+(-[a-zA-Z]*r|-r)'
+    pattern: '\bsed\s+(-[a-zA-Z]*r[a-zA-Z]*|-r)\s'
     fix_type: replace
     fix_template: "sed -E"
     examples:
       bad: "sed -r 's/foo+/bar/' file.txt"
       good: "sed -E 's/foo+/bar/' file.txt"
     tags: [coreutils, sed]
+    test_cases:
+      should_match:
+        - "sed -r 's/foo+/bar/' file.txt"
+        - "sed -rn 's/foo/bar/p' file"
+        - "sed -nr 's/foo/bar/p' file"
+        - "  sed -r 's/(a|b)/c/g' f"
+      should_not_match:
+        - "sed -E 's/foo+/bar/' file.txt"
+        - "sed -n 's/foo/bar/p' file"
+        - "sed 's/foo/bar/' file.txt"
 
   # grep
 
@@ -53,7 +74,7 @@ rules:
       Simple patterns (\d, \w, \s) are auto-converted to grep -E.
       Complex patterns with \K, lookbehinds, etc. require manual conversion.
     severity: error
-    pattern: 'grep\s+(-[a-zA-Z]*P[a-zA-Z]*\s|-P\s)'
+    pattern: '\bgrep\s+(-[a-zA-Z]*P[a-zA-Z]*\s|-P\s)'
     fix_type: transform
     fix_template: "grep -E with ERE pattern (auto-converts \\d→[0-9], \\w→[[:alnum:]_], \\s→[[:space:]])"
     why_unfixable: "Pattern uses PCRE features (\\K, lookbehinds (?<=), lookaheads (?=)) that have no ERE equivalent. Convert manually or use perl -ne instead"
@@ -63,6 +84,24 @@ rules:
     tags: [coreutils, grep]
     references:
       - https://ponderthebits.com/2017/01/know-your-tools-linux-gnu-vs-mac-bsd-command-line-utilities-grep-strings-sed-and-find/
+    test_cases:
+      should_match:
+        - "grep -P '\\d+' file.txt"
+        - "grep -rP 'pattern' dir/"
+        - "grep -rnP 'pattern' file"
+        - "grep -P 'foo' file"
+        - "  grep -P 'test' f"
+        - "if grep -qP 'pat' f; then"
+        - "grep -cP 'pat' file"
+        - 'result=$(grep -P "pat" file)'
+      should_not_match:
+        - "grep -E '[0-9]+' file.txt"
+        - "grep 'pattern' file"
+        - "grep -v 'pattern' file"
+        - "grep -r 'pattern' dir/"
+        - "egrep 'pattern' file"
+        - "grep -F 'literal' file"
+        - "GREP_P=true"
 
   - id: grep-only-matching-P
     name: "grep -oP combination"
@@ -71,7 +110,7 @@ rules:
       Simple patterns are auto-converted to grep -oE.
       Complex patterns with \K, lookbehinds require manual conversion.
     severity: error
-    pattern: 'grep\s+-[a-zA-Z]*o[a-zA-Z]*P|grep\s+-[a-zA-Z]*P[a-zA-Z]*o'
+    pattern: '\bgrep\s+-[a-zA-Z]*o[a-zA-Z]*P|\bgrep\s+-[a-zA-Z]*P[a-zA-Z]*o'
     fix_type: transform
     fix_template: "grep -oE with ERE pattern"
     why_unfixable: "Pattern uses PCRE features (\\K, (?<=), (?=)) that have no ERE equivalent. Use perl -ne instead"
@@ -79,6 +118,15 @@ rules:
       bad: "grep -oP '\\w+' file.txt"
       good: "grep -oE '[a-zA-Z0-9_]+' file.txt"
     tags: [coreutils, grep]
+    test_cases:
+      should_match:
+        - "grep -oP '\\w+' file.txt"
+        - "grep -Po '\\d+' file"
+        - "grep -roP 'pat' dir/"
+      should_not_match:
+        - "grep -oE '[0-9]+' file"
+        - "grep -o 'pattern' file"
+        - "grep -P 'pattern' file"
 
   # readlink / realpath
 
@@ -88,7 +136,7 @@ rules:
       readlink -f is GNU-only. BSD readlink does not support -f.
       Use a portable alternative with cd/pwd or install coreutils.
     severity: error
-    pattern: 'readlink\s+-f\s'
+    pattern: '\breadlink\s+-f\s'
     fix_type: suggest
     fix_template: '$(cd "$(dirname "$path")" && pwd -P)/$(basename "$path")'
     why_unfixable: "The replacement depends on what path is being resolved. For script path use: $(cd \"$(dirname \"$0\")\" && pwd -P). For variables, extract the dirname/basename pattern for your specific use case"
@@ -98,6 +146,17 @@ rules:
     tags: [coreutils, readlink]
     references:
       - https://github.com/ko1nksm/readlinkf
+    test_cases:
+      should_match:
+        - 'SCRIPT_DIR=$(readlink -f "$0")'
+        - "readlink -f /some/path"
+        - '  readlink -f "$link"'
+        - 'ABS=$(readlink -f relative/path)'
+      should_not_match:
+        - "readlink /some/link"
+        - "readlink -n /some/link"
+        - "greadlink -f /some/path"
+        - 'READLINK_F="flag"'
 
   - id: readlink-canonicalize-missing
     name: "readlink -m (missing ok)"
@@ -105,10 +164,18 @@ rules:
       readlink -m is GNU-only, allows non-existent path components.
       Not available on BSD.
     severity: error
-    pattern: 'readlink\s+-m\s'
+    pattern: '\breadlink\s+-m\s'
     fix_type: suggest
     fix_template: "Use portable path resolution"
     tags: [coreutils, readlink]
+    test_cases:
+      should_match:
+        - "readlink -m /some/path"
+        - '  readlink -m "$nonexistent"'
+      should_not_match:
+        - "readlink -f /some/path"
+        - "readlink /some/link"
+        - "greadlink -m /path"
 
   - id: realpath-command
     name: "realpath command"
@@ -124,6 +191,18 @@ rules:
       bad: 'ABS_PATH=$(realpath "$file")'
       good: 'ABS_PATH=$(cd "$(dirname "$file")" && pwd -P)/$(basename "$file")'
     tags: [coreutils, realpath]
+    test_cases:
+      should_match:
+        - 'ABS_PATH=$(realpath "$file")'
+        - "realpath /some/path"
+        - "  realpath relative/path"
+      should_not_match:
+        - "command -v realpath"
+        - "which realpath"
+        - "type realpath"
+        - "command -v realpath && realpath /path"
+        - "grealpath /some/path"
+        - "REALPATH=/usr/bin/realpath"
 
   # date
 
@@ -133,7 +212,7 @@ rules:
       date -d is GNU-only for parsing date strings.
       BSD date uses -j -f for date parsing.
     severity: error
-    pattern: 'date\s+-d\s+'
+    pattern: '\bdate\s+-d\s+'
     negative_pattern: 'date\s+-d\s+@'
     fix_type: suggest
     fix_template: "date -j -f FORMAT STRING"
@@ -144,29 +223,60 @@ rules:
     tags: [coreutils, date]
     references:
       - https://www.shell-tips.com/linux/how-to-format-date-and-time-in-linux-macos-and-bash/
+    test_cases:
+      should_match:
+        - 'date -d "2024-01-01"'
+        - "date -d 'yesterday'"
+        - 'date -d "last week" +%Y-%m-%d'
+        - 'date -d "+3 days"'
+        - '  date -d "now"'
+      should_not_match:
+        - "date -d @1609459200"
+        - "date +%Y-%m-%d"
+        - "date -u"
+        - "date -j -f '%Y' '2024'"
+        - "DATE_D=value"
 
   - id: date-d-epoch
     name: "date -d @epoch (epoch to date)"
     description: |
       date -d @EPOCH is GNU-only. BSD date uses -r EPOCH.
     severity: error
-    pattern: 'date\s+-d\s+@'
+    pattern: '\bdate\s+-d\s+@'
     fix_type: replace
     fix_template: "date -r"
     examples:
       bad: "date -d @1609459200"
       good: "date -r 1609459200"
     tags: [coreutils, date]
+    test_cases:
+      should_match:
+        - "date -d @1609459200"
+        - 'date -d @"$epoch"'
+        - "date -d @0"
+        - '  date -d @${ts}'
+      should_not_match:
+        - "date -r 1609459200"
+        - "date -d 'yesterday'"
+        - "date -d '2024-01-01'"
 
   - id: date-long-options
     name: "date --date (long option)"
     description: |
       Long options like --date are GNU-only.
     severity: error
-    pattern: 'date\s+--date'
+    pattern: '\bdate\s+--date'
     fix_type: suggest
     fix_template: "date -d or date -j -f"
     tags: [coreutils, date]
+    test_cases:
+      should_match:
+        - 'date --date="2024-01-01"'
+        - "date --date 'yesterday'"
+        - '  date --date="now"'
+      should_not_match:
+        - "date -d '2024-01-01'"
+        - "date +%Y-%m-%d"
 
   # stat
 
@@ -176,7 +286,7 @@ rules:
       stat -c FORMAT is GNU-only. BSD stat uses -f FORMAT.
       Note: format specifiers also differ between GNU and BSD.
     severity: error
-    pattern: 'stat\s+-c\s'
+    pattern: '\bstat\s+-c\s'
     fix_type: suggest
     fix_template: "stat -f FORMAT (BSD)"
     why_unfixable: "BSD stat uses -f instead of -c, with DIFFERENT format specifiers: GNU %s (size)→BSD %z, GNU %Y (mtime epoch)→BSD %m, GNU %U (owner)→BSD %Su, GNU %G (group)→BSD %Sg, GNU %a (perms octal)→BSD %Lp"
@@ -184,16 +294,34 @@ rules:
       bad: "stat -c '%s' file.txt"
       good: "stat -f '%z' file.txt  # BSD equivalent for size"
     tags: [coreutils, stat]
+    test_cases:
+      should_match:
+        - "stat -c '%s' file.txt"
+        - "stat -c %Y file"
+        - '  stat -c "%a" file'
+        - 'SIZE=$(stat -c %s file)'
+      should_not_match:
+        - "stat -f '%z' file.txt"
+        - "stat file.txt"
+        - "stat -L file.txt"
+        - "STAT_C=format"
 
   - id: stat-long-options
     name: "stat --format (long option)"
     description: |
       stat --format is GNU-only. BSD stat uses -f.
     severity: error
-    pattern: 'stat\s+--format'
+    pattern: '\bstat\s+--format'
     fix_type: suggest
     fix_template: "stat -f on BSD"
     tags: [coreutils, stat]
+    test_cases:
+      should_match:
+        - "stat --format '%s' file"
+        - 'stat --format="%Y" file'
+      should_not_match:
+        - "stat -f '%z' file"
+        - "stat -c '%s' file"
 
   # xargs
 
@@ -203,23 +331,44 @@ rules:
       xargs -r is GNU-only. BSD xargs doesn't run on empty input by default,
       so -r is unnecessary and will cause an error.
     severity: error
-    pattern: 'xargs\s+(-[a-zA-Z]*r|-r|--no-run-if-empty)'
+    pattern: '\bxargs\s+(-[a-zA-Z]*r|-r|--no-run-if-empty)'
     fix_type: replace
     fix_template: "xargs"
     examples:
       bad: "find . -name '*.txt' | xargs -r rm"
       good: "find . -name '*.txt' | xargs rm"
     tags: [coreutils, xargs]
+    test_cases:
+      should_match:
+        - "find . | xargs -r rm"
+        - "echo | xargs -r echo done"
+        - "cat list | xargs -r -I{} cp {} /dest"
+        - "xargs --no-run-if-empty rm"
+        - "  xargs -r rm -f"
+      should_not_match:
+        - "xargs rm"
+        - "xargs -I{} cp {} /dest"
+        - "xargs -0 rm"
+        - "xargs -n1 echo"
 
   - id: xargs-delimiter
     name: "xargs -d (delimiter)"
     description: |
       xargs -d is GNU-only. Use tr or other methods for custom delimiters.
     severity: error
-    pattern: 'xargs\s+-d'
+    pattern: '\bxargs\s+-d'
     fix_type: suggest
     fix_template: "tr '\\n' '\\0' | xargs -0"
     tags: [coreutils, xargs]
+    test_cases:
+      should_match:
+        - "xargs -d '\\n' echo"
+        - 'xargs -d ":" echo'
+        - "  xargs -d, echo"
+      should_not_match:
+        - "xargs -0 echo"
+        - "xargs echo"
+        - "xargs -I{} echo {}"
 
   # find
 
@@ -228,20 +377,36 @@ rules:
     description: |
       find -printf is GNU-only. Use -exec stat or other alternatives.
     severity: error
-    pattern: 'find\s+.*\s+-printf\s'
+    pattern: '\bfind\s+.*\s+-printf\s'
     fix_type: suggest
     fix_template: "find ... -exec stat ... or -exec printf ..."
     tags: [coreutils, find]
+    test_cases:
+      should_match:
+        - "find . -name '*.txt' -printf '%f\\n'"
+        - 'find /tmp -printf "%s %p\n"'
+        - "  find . -type f -printf '%T@ %p\\n'"
+      should_not_match:
+        - "find . -name '*.txt' -print"
+        - "find . -name '*.txt' -exec printf '%s\\n' {} \\;"
+        - "find . -print0"
 
   - id: find-regextype
     name: "find -regextype"
     description: |
       find -regextype is GNU-only. BSD find has different regex behaviour.
     severity: error
-    pattern: 'find\s+.*\s+-regextype\s'
+    pattern: '\bfind\s+.*\s+-regextype\s'
     fix_type: suggest
     fix_template: "Use basic regex or pipe to grep"
     tags: [coreutils, find]
+    test_cases:
+      should_match:
+        - "find . -regextype posix-extended -regex '.*\\.txt'"
+        - '  find /tmp -regextype egrep -regex ".*log"'
+      should_not_match:
+        - "find . -regex '.*\\.txt'"
+        - "find . -name '*.txt'"
 
   # sort
 
@@ -250,20 +415,40 @@ rules:
     description: |
       sort -V (version sort) is GNU-only. Not available on BSD.
     severity: error
-    pattern: 'sort\s+(-[a-zA-Z]*V|-V|--version-sort)'
+    pattern: '\bsort\s+(-[a-zA-Z]*V|-V|--version-sort)'
     fix_type: suggest
     fix_template: "Custom sort function or use numeric sort where possible"
     tags: [coreutils, sort]
+    test_cases:
+      should_match:
+        - "sort -V versions.txt"
+        - "echo '1.2 1.10' | sort -V"
+        - "sort -rV versions.txt"
+        - "sort --version-sort file"
+      should_not_match:
+        - "sort -n file"
+        - "sort -r file"
+        - "sort file"
+        - "sort --version"
 
   - id: sort-human
     name: "sort -h (human numeric)"
     description: |
       sort -h (human-readable numeric sort) is GNU-only.
     severity: warning
-    pattern: 'sort\s+(-[a-zA-Z]*h|-h|--human-numeric-sort)'
+    pattern: '\bsort\s+(-[a-zA-Z]*h|-h|--human-numeric-sort)'
     fix_type: suggest
     fix_template: "Convert to bytes first, then sort -n"
     tags: [coreutils, sort]
+    test_cases:
+      should_match:
+        - "du -sh * | sort -h"
+        - "sort -h sizes.txt"
+        - "sort -rh sizes.txt"
+        - "sort --human-numeric-sort file"
+      should_not_match:
+        - "sort -n file"
+        - "sort --help"
 
   # head / tail
 
@@ -273,13 +458,24 @@ rules:
       head -n -N (all but last N lines) is GNU-only.
       BSD head does not support negative counts.
     severity: error
-    pattern: 'head\s+-n\s*-\d+'
+    pattern: '\bhead\s+-n\s*-\d+'
     fix_type: suggest
     fix_template: "awk 'NR>N' or calculate line count first"
     examples:
       bad: "head -n -5 file.txt"
       good: "awk 'NR <= (total - 5)' file.txt"
     tags: [coreutils, head]
+    test_cases:
+      should_match:
+        - "head -n -5 file.txt"
+        - "head -n-5 file.txt"
+        - "head -n -1 file"
+        - "  head -n -10 log.txt"
+      should_not_match:
+        - "head -n 5 file.txt"
+        - "head -n 10 file"
+        - "head -5 file"
+        - "head file.txt"
 
   # mktemp
 
@@ -289,13 +485,23 @@ rules:
       GNU mktemp has a default template, BSD mktemp requires one.
       Always provide an explicit template for portability.
     severity: warning
-    pattern: 'mktemp\s*$|mktemp\s+-d\s*$'
+    pattern: 'mktemp\)$|mktemp -d\)$|^\s*mktemp\s*$|^\s*mktemp\s+-d\s*$'
     fix_type: suggest
     fix_template: "mktemp /tmp/myapp.XXXXXX or mktemp -d /tmp/myapp.XXXXXX"
     examples:
       bad: "TMPFILE=$(mktemp)"
       good: "TMPFILE=$(mktemp /tmp/myapp.XXXXXX)"
     tags: [coreutils, mktemp]
+    test_cases:
+      should_match:
+        - "TMPFILE=$(mktemp)"
+        - "TMPDIR=$(mktemp -d)"
+        - "mktemp"
+        - "  mktemp -d"
+      should_not_match:
+        - "mktemp /tmp/myapp.XXXXXX"
+        - "mktemp -d /tmp/myapp.XXXXXX"
+        - "mktemp -t prefix.XXXXXX"
 
   # timeout
 
@@ -306,16 +512,34 @@ rules:
       Install via 'brew install coreutils' and use gtimeout, or use alternatives.
       Note: Only flags standalone 'timeout' as a command, not --timeout flags.
     severity: error
-    pattern: '\btimeout\s+(\d)'
+    pattern: '^\s*timeout\s+\d|[;|&]\s*timeout\s+\d|\$\(timeout\s+\d'
     negative_pattern: '-timeout'
-    fix_type: replace
-    fix_template: "gtimeout $1"
+    fix_type: suggest
+    fix_template: "gtimeout or alternative"
     examples:
       bad: "timeout 5 command"
       good: "gtimeout 5 command  # requires: brew install coreutils"
     tags: [coreutils, timeout]
     references:
       - https://dev.to/maple/bringing-timeout-to-macos-without-installing-all-of-gnu-coreutils-22lj
+    test_cases:
+      should_match:
+        - "timeout 5 some-command"
+        - "timeout 30 long-runner"
+        - "  timeout 1 sleep 0.5"
+        - "timeout 60 ./script.sh"
+        - "cmd; timeout 5 other"
+        - "cmd | timeout 5 other"
+        - "cmd && timeout 5 other"
+        - 'result=$(timeout 5 cmd)'
+      should_not_match:
+        - "gtimeout 5 some-command"
+        - "golangci-lint run --timeout 5m"
+        - "curl --connect-timeout 30 https://example.com"
+        - "--timeout 30"
+        - "TIMEOUT=30"
+        - "$TIMEOUT 5 cmd"
+        - "my_timeout_func 5"
 
   # cp / mv
 
@@ -324,20 +548,36 @@ rules:
     description: |
       cp -T is GNU-only. Use explicit paths instead.
     severity: error
-    pattern: 'cp\s+(-[a-zA-Z]*T|-T|--no-target-directory)'
+    pattern: '\bcp\s+(-[a-zA-Z]*T|-T|--no-target-directory)'
     fix_type: suggest
     fix_template: "Use explicit source and destination paths"
     tags: [coreutils, cp]
+    test_cases:
+      should_match:
+        - "cp -T src dest"
+        - "cp -rT src/ dest/"
+        - "cp --no-target-directory src dest"
+      should_not_match:
+        - "cp src dest"
+        - "cp -r src dest"
+        - "cp -a src dest"
 
   - id: mv-no-target-dir
     name: "mv -T (no target directory)"
     description: |
       mv -T is GNU-only. Use explicit paths instead.
     severity: error
-    pattern: 'mv\s+(-[a-zA-Z]*T|-T|--no-target-directory)'
+    pattern: '\bmv\s+(-[a-zA-Z]*T|-T|--no-target-directory)'
     fix_type: suggest
     fix_template: "Use explicit source and destination paths"
     tags: [coreutils, mv]
+    test_cases:
+      should_match:
+        - "mv -T src dest"
+        - "mv --no-target-directory src dest"
+      should_not_match:
+        - "mv src dest"
+        - "mv -f src dest"
 
   # seq
 
@@ -347,13 +587,25 @@ rules:
       seq is available on both, but BSD has jot as an alternative.
       For maximum portability, use brace expansion {1..N} (bash 3+).
     severity: info
-    pattern: '\bseq\s+'
+    pattern: '\bseq\s+[\d]'
     fix_type: suggest
     fix_template: "Use {start..end} brace expansion or for ((i=1; i<=n; i++))"
     examples:
       bad: "for i in $(seq 1 10); do echo $i; done"
       good: "for i in {1..10}; do echo $i; done"
     tags: [coreutils, seq]
+    test_cases:
+      should_match:
+        - "seq 1 10"
+        - "for i in $(seq 1 100); do"
+        - "  seq 0 2 20"
+        - "seq 5"
+      should_not_match:
+        - "for i in {1..10}; do"
+        - "SEQ_NUM=5"
+        - "myseq 1 10"
+        - "consequence of this"
+        - "sequence_gen 5"
 
   # tar
 
@@ -364,7 +616,7 @@ rules:
       On BSD tar (macOS), --exclude MUST come before the path arguments
       or it will be silently ignored.
     severity: warning
-    pattern: 'tar\s+[a-zA-Z]*[czx][a-zA-Z]*f\s+\S+\s+\S+.*--exclude'
+    pattern: '\btar\s+[a-zA-Z]*[czx][a-zA-Z]*f\s+\S+\s+\S+.*--exclude'
     fix_type: suggest
     fix_template: "Move --exclude before the source paths: tar --exclude='pattern' czf archive.tar.gz dir/"
     why_unfixable: "Argument order is context-dependent. Move all --exclude flags before any paths in the tar command"
@@ -372,6 +624,13 @@ rules:
       bad: "tar czf archive.tar.gz src/ --exclude='*.o'"
       good: "tar --exclude='*.o' czf archive.tar.gz src/"
     tags: [coreutils, tar]
+    test_cases:
+      should_match:
+        - "tar czf archive.tar.gz src/ --exclude='*.o'"
+        - "tar xzf archive.tar.gz dir/ --exclude='*.log'"
+      should_not_match:
+        - "tar --exclude='*.o' czf archive.tar.gz src/"
+        - "tar czf archive.tar.gz src/"
 
   - id: tar-appledouble
     name: "tar creates AppleDouble ._ files on macOS"
@@ -390,6 +649,17 @@ rules:
     tags: [coreutils, tar, macos]
     references:
       - https://superuser.com/questions/259703/get-mac-tar-to-stop-putting-files-in-it
+    test_cases:
+      should_match:
+        - "tar czf archive.tar.gz dir/"
+        - "tar cf archive.tar dir/"
+        - "tar cjf archive.tar.bz2 dir/"
+        - "  tar czf out.tar.gz src/"
+      should_not_match:
+        - "COPYFILE_DISABLE=1 tar czf archive.tar.gz dir/"
+        - "tar xzf archive.tar.gz"
+        - "tar xf archive.tar"
+        - "tar tzf archive.tar.gz"
 
   # cp trailing slash
 
@@ -402,7 +672,7 @@ rules:
               cp -R dir target/ copies dir itself into target
       Remove the trailing slash for consistent behaviour across platforms.
     severity: warning
-    pattern: 'cp\s+(-[a-zA-Z]*R[a-zA-Z]*|-R|--recursive)\s+\S+/\s'
+    pattern: '\bcp\s+(-[a-zA-Z]*R[a-zA-Z]*|-R|--recursive)\s+\S+/\s'
     fix_type: suggest
     fix_template: "Remove trailing slash from source path for consistent cross-platform behaviour"
     why_unfixable: "Depends on whether you want to copy the directory itself or its contents. Without trailing slash, behaviour is consistent across platforms"
@@ -410,6 +680,17 @@ rules:
       bad: "cp -R src/ dest/"
       good: "cp -R src dest/"
     tags: [coreutils, cp]
+    test_cases:
+      should_match:
+        - "cp -R src/ dest/"
+        - "cp -rR src/ dest/"
+        - "cp --recursive src/ dest/"
+        - "  cp -R /var/log/ /backup/"
+      should_not_match:
+        - "cp -R src dest/"
+        - "cp -R src dest"
+        - "cp src/ dest/"
+        - "cp -r file dest"
 
   # mktemp -t
 
@@ -421,7 +702,7 @@ rules:
       - BSD: mktemp -t prefix creates a temp file with prefix but different naming
       Use an explicit template path for portable behaviour.
     severity: warning
-    pattern: 'mktemp\s+-t\s+'
+    pattern: '\bmktemp\s+-t\s+'
     fix_type: suggest
     fix_template: 'mktemp /tmp/prefix.XXXXXX or mktemp "${TMPDIR:-/tmp}/prefix.XXXXXX"'
     why_unfixable: "Replace mktemp -t prefix with mktemp \"${TMPDIR:-/tmp}/prefix.XXXXXX\" for portable behaviour"
@@ -429,3 +710,382 @@ rules:
       bad: "TMPFILE=$(mktemp -t myapp)"
       good: 'TMPFILE=$(mktemp "${TMPDIR:-/tmp}/myapp.XXXXXX")'
     tags: [coreutils, mktemp]
+    test_cases:
+      should_match:
+        - "mktemp -t myapp"
+        - "mktemp -t prefix.XXXXXX"
+        - "  TMPFILE=$(mktemp -t test)"
+      should_not_match:
+        - "mktemp /tmp/myapp.XXXXXX"
+        - 'mktemp "${TMPDIR:-/tmp}/app.XXXXXX"'
+        - "mktemp -d /tmp/dir.XXXXXX"
+
+  # sed (additional)
+
+  - id: sed-bre-alternation
+    name: "sed BRE alternation \\|"
+    description: |
+      The alternation operator \| in Basic Regular Expressions is a GNU
+      sed extension. BSD sed (macOS) does not support \| in BRE mode.
+      Use sed -E (ERE mode) with | or use multiple sed expressions.
+    severity: error
+    pattern: '\bsed\s+.*[''"]\S*\\[|]'
+    negative_pattern: '\bsed\s+.*-[a-zA-Z]*E'
+    fix_type: suggest
+    fix_template: "sed -E 's/foo|bar/baz/' or use multiple -e expressions"
+    examples:
+      bad: "sed 's/foo\\|bar/baz/' file"
+      good: "sed -E 's/foo|bar/baz/' file"
+    tags: [coreutils, sed]
+    test_cases:
+      should_match:
+        - "sed 's/foo\\|bar/baz/' file"
+        - "sed -n '/error\\|warn/p' file"
+        - "  sed 's/a\\|b/c/g' file"
+      should_not_match:
+        - "sed -E 's/foo|bar/baz/' file"
+        - "sed 's/foo/bar/' file"
+        - "sed -n '/error/p' file"
+
+  # grep (additional)
+
+  - id: grep-include
+    name: "grep --include (GNU extension)"
+    description: |
+      grep --include is a GNU extension for filtering files during recursive
+      search. BSD grep on older macOS versions may not support it.
+      Use find with -name and pipe to grep instead.
+    severity: warning
+    pattern: '\bgrep\s+.*--include'
+    fix_type: suggest
+    fix_template: "find . -name 'pattern' -exec grep ... {} +"
+    examples:
+      bad: "grep -r --include='*.py' 'pattern' ."
+      good: "find . -name '*.py' -exec grep 'pattern' {} +"
+    tags: [coreutils, grep]
+    test_cases:
+      should_match:
+        - "grep -r --include='*.py' 'pattern' ."
+        - "grep --include='*.sh' -rn 'TODO' src/"
+        - "  grep -rn --include='*.go' 'func' ."
+      should_not_match:
+        - "grep -r 'pattern' ."
+        - "find . -name '*.py' -exec grep 'pattern' {} +"
+        - "grep 'pattern' file.txt"
+
+  - id: grep-exclude-dir
+    name: "grep --exclude-dir (GNU extension)"
+    description: |
+      grep --exclude-dir is a GNU extension. Not available on older BSD grep.
+      Use find with -not -path and pipe to grep.
+    severity: warning
+    pattern: '\bgrep\s+.*--exclude-dir'
+    fix_type: suggest
+    fix_template: "find . -not -path './dir/*' -exec grep ... {} +"
+    tags: [coreutils, grep]
+    test_cases:
+      should_match:
+        - "grep -r --exclude-dir=.git 'pattern' ."
+        - "grep -rn --exclude-dir='node_modules' 'import' src/"
+      should_not_match:
+        - "grep -r 'pattern' ."
+        - "find . -not -path './.git/*' -exec grep 'pattern' {} +"
+
+  # date
+
+  - id: date-relative
+    name: "date -d relative dates (GNU extension)"
+    description: |
+      GNU date -d supports relative date strings like 'yesterday', '2 days ago'.
+      BSD date (macOS) uses -v for relative dates. Use -v-1d for yesterday, etc.
+    severity: error
+    pattern: '\bdate\s+-d\s'
+    fix_type: suggest
+    fix_template: "date -v-1d (BSD) or use conditional: if date -d works, else date -v"
+    examples:
+      bad: "date -d 'yesterday' +%Y-%m-%d"
+      good: "date -v-1d +%Y-%m-%d"
+    tags: [coreutils, date]
+    test_cases:
+      should_match:
+        - "date -d 'yesterday' +%Y-%m-%d"
+        - "date -d '2 days ago'"
+        - "date -d @1234567890"
+        - "  date -d 'next monday'"
+      should_not_match:
+        - "date +%Y-%m-%d"
+        - "date -v-1d +%Y-%m-%d"
+        - "date -u +%s"
+        - "DATE_D=value"
+
+  - id: date-epoch
+    name: "date +%s epoch (portability note)"
+    description: |
+      date +%s (seconds since epoch) works on both GNU and BSD date,
+      but parsing epoch timestamps differs:
+      - GNU: date -d @EPOCH
+      - BSD: date -r EPOCH
+      Use the appropriate flag for each platform.
+    severity: info
+    pattern: '\bdate\s+-d\s+@'
+    fix_type: suggest
+    fix_template: "date -r EPOCH (BSD) or date -d @EPOCH (GNU)"
+    examples:
+      bad: "date -d @1234567890"
+      good: "date -r 1234567890"
+    tags: [coreutils, date]
+    test_cases:
+      should_match:
+        - "date -d @1234567890"
+        - "date -d @$timestamp"
+        - "  date -d @0"
+      should_not_match:
+        - "date -r 1234567890"
+        - "date +%s"
+        - "date -d 'yesterday'"
+
+  # checksum
+
+  - id: md5sum-command
+    name: "md5sum command (GNU)"
+    description: |
+      md5sum is GNU coreutils. macOS uses md5 instead.
+      Use md5sum if available, fall back to md5 -r for compatible output.
+    severity: error
+    pattern: '^\s*md5sum\s|[;|&]\s*md5sum\s|\$\(md5sum\s'
+    fix_type: suggest
+    fix_template: "md5 -r (BSD) or check: command -v md5sum || alias md5sum='md5 -r'"
+    examples:
+      bad: "md5sum file.txt"
+      good: "md5 -r file.txt"
+    tags: [coreutils, checksum]
+    test_cases:
+      should_match:
+        - "md5sum file.txt"
+        - "  md5sum *.iso"
+        - "cmd | md5sum file"
+        - "hash=$(md5sum file)"
+      should_not_match:
+        - "md5 -r file.txt"
+        - "MD5SUM_FILE=checksums.txt"
+        - "echo md5sum"
+        - "sha256sum file.txt"
+
+  - id: sha256sum-command
+    name: "sha256sum command (GNU)"
+    description: |
+      sha256sum is GNU coreutils. macOS uses shasum -a 256 instead.
+    severity: error
+    pattern: '^\s*sha256sum\s|[;|&]\s*sha256sum\s|\$\(sha256sum\s'
+    fix_type: suggest
+    fix_template: "shasum -a 256 (BSD/macOS)"
+    examples:
+      bad: "sha256sum file.txt"
+      good: "shasum -a 256 file.txt"
+    tags: [coreutils, checksum]
+    test_cases:
+      should_match:
+        - "sha256sum file.txt"
+        - "  sha256sum *.bin"
+        - "hash=$(sha256sum file)"
+      should_not_match:
+        - "shasum -a 256 file.txt"
+        - "SHA256SUM=value"
+        - "echo sha256sum"
+
+  # base64
+
+  - id: base64-decode-flag
+    name: "base64 -d vs -D decode flag"
+    description: |
+      GNU base64 uses -d to decode. BSD base64 (macOS) uses -D.
+      Use base64 --decode which works on both, or detect the platform.
+    severity: error
+    pattern: '\bbase64\s+-d\b'
+    fix_type: suggest
+    fix_template: "base64 --decode (works on both GNU and BSD)"
+    examples:
+      bad: "echo 'dGVzdA==' | base64 -d"
+      good: "echo 'dGVzdA==' | base64 --decode"
+    tags: [coreutils, base64]
+    test_cases:
+      should_match:
+        - "base64 -d file.txt"
+        - "echo 'data' | base64 -d"
+        - "  base64 -d < encoded.txt"
+      should_not_match:
+        - "base64 --decode file.txt"
+        - "base64 -D file.txt"
+        - "base64 file.txt"
+        - "base64 -di file.txt"
+
+  # readlink
+
+  - id: readlink-f
+    name: "readlink -f (GNU extension)"
+    description: |
+      readlink -f (canonicalize, resolving all symlinks) is GNU-specific.
+      BSD readlink does not support -f. Use realpath or a portable function.
+    severity: error
+    pattern: '\breadlink\s+-f\s'
+    fix_type: suggest
+    fix_template: "realpath (available on macOS 12.3+) or custom function using cd/pwd"
+    examples:
+      bad: "SCRIPT_DIR=$(readlink -f \"$0\")"
+      good: "SCRIPT_DIR=$(cd \"$(dirname \"$0\")\" && pwd -P)"
+    tags: [coreutils, readlink]
+    test_cases:
+      should_match:
+        - "readlink -f /usr/bin/python"
+        - "DIR=$(readlink -f \"$0\")"
+        - "  readlink -f symlink"
+      should_not_match:
+        - "readlink symlink"
+        - "readlink -n symlink"
+        - "realpath /usr/bin/python"
+        - "READLINK_F=true"
+
+  # install
+
+  - id: install-D
+    name: "install -D (create directories)"
+    description: |
+      install -D (create leading directories) is GNU-specific.
+      BSD install does not support -D. Use mkdir -p first.
+    severity: error
+    pattern: '^\s*install\s+(-[a-zA-Z]*D|-D)'
+    fix_type: suggest
+    fix_template: "mkdir -p dir && install file dir/"
+    examples:
+      bad: "install -D -m 755 script /usr/local/bin/script"
+      good: "mkdir -p /usr/local/bin && install -m 755 script /usr/local/bin/script"
+    tags: [coreutils, install]
+    test_cases:
+      should_match:
+        - "install -D -m 755 script /usr/local/bin/script"
+        - "install -Dm644 config /etc/myapp/config"
+        - "  install -D file dest"
+      should_not_match:
+        - "install -m 755 script /usr/local/bin/"
+        - "install file dest"
+        - "npm install -D package"
+
+  # tail
+
+  - id: tail-pid
+    name: "tail --pid (GNU extension)"
+    description: |
+      tail --pid (terminate after PID dies) is GNU-specific.
+      BSD tail does not support --pid.
+    severity: error
+    pattern: '\btail\s+.*--pid'
+    fix_type: suggest
+    fix_template: "Use a while loop with kill -0 to check if process is alive"
+    tags: [coreutils, tail]
+    test_cases:
+      should_match:
+        - "tail -f --pid=$PID logfile"
+        - "tail --pid=1234 -f /var/log/syslog"
+        - "  tail -f --pid $! output.log"
+      should_not_match:
+        - "tail -f logfile"
+        - "tail -n 10 file"
+        - "tail -100 file"
+
+  # numfmt
+
+  - id: numfmt-command
+    name: "numfmt command (GNU)"
+    description: |
+      numfmt is a GNU coreutils command for number formatting.
+      Not available on macOS. Use awk or printf for number formatting.
+    severity: error
+    pattern: '^\s*numfmt\s|[;|&]\s*numfmt\s|\$\(numfmt\s'
+    fix_type: suggest
+    fix_template: "Use awk or printf for number formatting"
+    examples:
+      bad: "numfmt --to=iec 1048576"
+      good: "awk 'BEGIN{printf \"%.1f MiB\\n\", 1048576/1048576}'"
+    tags: [coreutils, numfmt]
+    test_cases:
+      should_match:
+        - "numfmt --to=iec 1048576"
+        - "  numfmt --from=auto 1K"
+        - "echo 1024 | numfmt --to=iec"
+        - "result=$(numfmt --to=si 1000)"
+      should_not_match:
+        - "NUMFMT=custom"
+        - "echo numfmt"
+
+  # dd
+
+  - id: dd-status-progress
+    name: "dd status=progress (GNU extension)"
+    description: |
+      dd status=progress (show transfer progress) is a GNU coreutils extension.
+      BSD dd on macOS does not support status=progress.
+      Use pv (pipe viewer) or send SIGINFO (Ctrl+T on macOS) instead.
+    severity: warning
+    pattern: '\bdd\s+.*status=progress'
+    fix_type: suggest
+    fix_template: "Use pv before dd, or send SIGINFO (kill -INFO $PID) on macOS"
+    examples:
+      bad: "dd if=image.iso of=/dev/sda status=progress"
+      good: "pv image.iso | dd of=/dev/sda bs=4M"
+    tags: [coreutils, dd]
+    test_cases:
+      should_match:
+        - "dd if=image.iso of=/dev/sda status=progress"
+        - "dd if=/dev/zero of=file bs=1M count=100 status=progress"
+        - "  dd if=input of=output status=progress"
+      should_not_match:
+        - "dd if=image.iso of=/dev/sda"
+        - "dd if=/dev/zero of=file bs=1M count=100"
+        - "DD_STATUS=progress"
+
+  # column
+
+  - id: column-table
+    name: "column -t -s (delimiter differences)"
+    description: |
+      GNU column and BSD column behave differently with -t -s options.
+      GNU column -s supports multi-char delimiters, BSD column does not.
+      For complex table formatting, use awk or printf instead.
+    severity: info
+    pattern: '\bcolumn\s+.*-t\s+-s'
+    fix_type: suggest
+    fix_template: "Use awk '{printf \"%-20s %-10s\\n\", $1, $2}' for portable formatting"
+    tags: [coreutils, column]
+    test_cases:
+      should_match:
+        - "column -t -s ',' file.csv"
+        - "column -t -s: /etc/passwd"
+        - "  cat data | column -t -s '|'"
+      should_not_match:
+        - "column -t file"
+        - "column file"
+        - "COLUMN_T=true"
+
+  # ls
+
+  - id: ls-color-auto
+    name: "ls --color=auto (GNU extension)"
+    description: |
+      ls --color is a GNU extension. BSD ls uses -G for color output.
+      For portable scripts, avoid relying on color flags.
+    severity: info
+    pattern: '\bls\s+.*--color'
+    fix_type: suggest
+    fix_template: "ls -G (BSD/macOS) or avoid color flags in scripts"
+    tags: [coreutils, ls]
+    test_cases:
+      should_match:
+        - "ls --color=auto"
+        - "ls --color=always"
+        - "ls -la --color=auto"
+        - "  ls --color ."
+      should_not_match:
+        - "ls -G"
+        - "ls -la"
+        - "ls ."
+        - "LS_COLORS=value"
