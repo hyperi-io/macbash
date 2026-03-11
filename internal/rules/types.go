@@ -26,18 +26,18 @@ const (
 )
 
 type Rule struct {
-	ID              string   `yaml:"id"`
-	Name            string   `yaml:"name"`
-	Description     string   `yaml:"description"`
-	Severity        Severity `yaml:"severity"`
-	Pattern         string   `yaml:"pattern"`
-	NegativePattern string   `yaml:"negative_pattern,omitempty"`
-	ShebangMatch    string   `yaml:"shebang_match,omitempty"`
-	FixType         FixType  `yaml:"fix_type"`
-	FixTemplate     string   `yaml:"fix_template,omitempty"`
-	WhyUnfixable    string   `yaml:"why_unfixable,omitempty"`
-	FixFunction     string   `yaml:"fix_function,omitempty"`
-	Examples        Examples `yaml:"examples,omitempty"`
+	ID              string    `yaml:"id"`
+	Name            string    `yaml:"name"`
+	Description     string    `yaml:"description"`
+	Severity        Severity  `yaml:"severity"`
+	Pattern         string    `yaml:"pattern"`
+	NegativePattern string    `yaml:"negative_pattern,omitempty"`
+	ShebangMatch    string    `yaml:"shebang_match,omitempty"`
+	FixType         FixType   `yaml:"fix_type"`
+	FixTemplate     string    `yaml:"fix_template,omitempty"`
+	WhyUnfixable    string    `yaml:"why_unfixable,omitempty"`
+	FixFunction     string    `yaml:"fix_function,omitempty"`
+	Examples        Examples  `yaml:"examples,omitempty"`
 	Tags            []string  `yaml:"tags,omitempty"`
 	References      []string  `yaml:"references,omitempty"`
 	TestCases       TestCases `yaml:"test_cases,omitempty"`
