@@ -4,7 +4,7 @@
 // Language:  Go
 //
 // License:   Apache-2.0
-// Copyright: (c) 2025 HyperSec Pty Ltd
+// Copyright: (c) 2025-2026 HYPERI PTY LIMITED
 
 package scanner
 
@@ -13,7 +13,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/hypersec-io/macbash/internal/rules"
+	"github.com/hyperi-io/macbash/internal/rules"
 )
 
 func TestNew(t *testing.T) {

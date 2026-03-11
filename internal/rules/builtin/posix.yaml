@@ -4,7 +4,7 @@
 # Language:  YAML
 #
 # License:   Apache-2.0
-# Copyright: (c) 2025 HyperSec Pty Ltd
+# Copyright: (c) 2025-2026 HYPERI PTY LIMITED
 #
 # These rules only apply to scripts with a #!/bin/sh shebang.
 # On many systems (Debian/Ubuntu, macOS), /bin/sh is dash, not bash.

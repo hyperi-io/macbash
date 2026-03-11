@@ -5,16 +5,16 @@
 # Language:  Shell (POSIX)
 #
 # License:   Apache-2.0
-# Copyright: (c) 2025 HyperSec Pty Ltd
+# Copyright: (c) 2025-2026 HYPERI PTY LIMITED
 #
 # Usage:
-#   curl -fsSL https://raw.githubusercontent.com/hypersec-io/macbash/main/packaging/install.sh | sh
+#   curl -fsSL https://raw.githubusercontent.com/hyperi-io/macbash/main/packaging/install.sh | sh
 #   curl -fsSL ... | sh -s -- --user    # Install to ~/.local/bin
 #   curl -fsSL ... | sh -s -- --system  # Install to /usr/local/bin (default, requires sudo)
 
 set -e
 
-REPO="hypersec-io/macbash"
+REPO="hyperi-io/macbash"
 INSTALL_DIR="/usr/local/bin"
 USER_INSTALL=false
 

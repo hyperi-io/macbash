@@ -4,7 +4,7 @@
 # Language:  YAML
 #
 # License:   Apache-2.0
-# Copyright: (c) 2025 HyperSec Pty Ltd
+# Copyright: (c) 2025-2026 HYPERI PTY LIMITED
 
 run:
   timeout: 5m
@@ -32,7 +32,7 @@ linters-settings:
     enable:
       - shadow
   goimports:
-    local-prefixes: github.com/hypersec-io/macbash
+    local-prefixes: github.com/hyperi-io/macbash
   misspell:
     locale: US
   gocritic:

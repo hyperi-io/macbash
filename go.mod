@@ -1,4 +1,4 @@
-module github.com/hypersec-io/macbash
+module github.com/hyperi-io/macbash
 
 go 1.26.0
 

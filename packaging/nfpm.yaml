@@ -4,7 +4,7 @@
 # Language:  YAML
 #
 # License:   Apache-2.0
-# Copyright: (c) 2025 HyperSec Pty Ltd
+# Copyright: (c) 2025-2026 HYPERI PTY LIMITED
 
 # nFPM configuration - https://nfpm.goreleaser.com/
 name: macbash
@@ -13,13 +13,13 @@ platform: linux
 version: "${VERSION}"
 version_schema: semver
 
-maintainer: "HyperSec <support@hypersec.io>"
+maintainer: "HyperI <support@hyperi.io>"
 description: |
   macbash - Bash script compatibility checker for macOS
   Detects GNU/Linux-specific bash constructs that won't work on macOS
   and can auto-fix many issues for cross-platform compatibility.
-vendor: "HyperSec Pty Ltd"
-homepage: "https://github.com/hypersec-io/macbash"
+vendor: "HYPERI PTY LIMITED"
+homepage: "https://github.com/hyperi-io/macbash"
 license: "Apache-2.0"
 section: devel
 priority: optional

@@ -4,7 +4,7 @@
 // Language:  Go
 //
 // License:   Apache-2.0
-// Copyright: (c) 2025 HyperSec Pty Ltd
+// Copyright: (c) 2025-2026 HYPERI PTY LIMITED
 
 package cli
 
@@ -15,10 +15,10 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/hypersec-io/macbash/internal/fixer"
-	"github.com/hypersec-io/macbash/internal/output"
-	"github.com/hypersec-io/macbash/internal/rules"
-	"github.com/hypersec-io/macbash/internal/scanner"
+	"github.com/hyperi-io/macbash/internal/fixer"
+	"github.com/hyperi-io/macbash/internal/output"
+	"github.com/hyperi-io/macbash/internal/rules"
+	"github.com/hyperi-io/macbash/internal/scanner"
 )
 
 var (
