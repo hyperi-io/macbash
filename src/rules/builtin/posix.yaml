@@ -1,0 +1,237 @@
+# Project:   macbash
+# File:      internal/rules/builtin/posix.yaml
+# Purpose:   Rules for detecting bashisms in /bin/sh scripts
+# Language:  YAML
+#
+# License:   Apache-2.0
+# Copyright: (c) 2025-2026 HYPERI PTY LIMITED
+#
+# These rules only apply to scripts with a #!/bin/sh shebang.
+# On many systems (Debian/Ubuntu, macOS), /bin/sh is dash, not bash.
+
+version: "1.0"
+
+rules:
+  - id: posix-double-bracket
+    name: "[[ ]] test (bashism in /bin/sh)"
+    description: |
+      [[ ]] is a bash extension not available in POSIX sh.
+      Use [ ] (test) for portable conditional tests.
+    severity: error
+    pattern: '\[\['
+    shebang_match: '^#!/bin/sh'
+    fix_type: suggest
+    fix_template: 'Use [ ] instead of [[ ]] for POSIX compliance'
+    why_unfixable: "[[ ]] supports pattern matching and regex that [ ] does not. Convert [[ $var == pattern* ]] to case statements, and [[ $var =~ regex ]] to external grep/expr"
+    examples:
+      bad: '[[ -f "$file" ]]'
+      good: '[ -f "$file" ]'
+    tags: [posix, bashism]
+    test_cases:
+      should_match:
+        - '[[ -f "$file" ]]'
+        - 'if [[ "$x" == "y" ]]; then'
+        - '  [[ -d /tmp ]]'
+        - '[[ $var =~ ^[0-9]+$ ]]'
+      should_not_match:
+        - '[ -f "$file" ]'
+        - 'test -f "$file"'
+
+  - id: posix-arithmetic
+    name: "(( )) arithmetic (bashism in /bin/sh)"
+    description: |
+      (( )) arithmetic evaluation is a bash extension.
+      Use $(( )) for arithmetic expansion or expr for POSIX sh.
+    severity: error
+    pattern: '(?:^|[^$])\(\('
+    shebang_match: '^#!/bin/sh'
+    fix_type: suggest
+    fix_template: 'Use $(( )) for arithmetic expansion or [ expr ] for comparisons'
+    examples:
+      bad: 'if (( x > 5 )); then'
+      good: 'if [ "$x" -gt 5 ]; then'
+    tags: [posix, bashism]
+    test_cases:
+      should_match:
+        - 'if (( x > 5 )); then'
+        - '(( count++ ))'
+        - '  (( total += 5 ))'
+      should_not_match:
+        - 'result=$(( x + 5 ))'
+        - 'echo $(( 2 + 3 ))'
+
+  - id: posix-function-keyword
+    name: "'function' keyword (bashism in /bin/sh)"
+    description: |
+      The 'function' keyword for declaring functions is a bash extension.
+      Use the POSIX form: funcname() { ... }
+    severity: error
+    pattern: '^\s*function\s+\w+\s*[({]'
+    shebang_match: '^#!/bin/sh'
+    fix_type: suggest
+    fix_template: 'funcname() { ... }'
+    examples:
+      bad: 'function myfunc {'
+      good: 'myfunc() {'
+    tags: [posix, bashism]
+    test_cases:
+      should_match:
+        - 'function myfunc {'
+        - 'function cleanup() {'
+        - '  function helper {'
+        - 'function do_work {'
+      should_not_match:
+        - 'myfunc() {'
+        - 'cleanup() {'
+        - 'my_function=true'
+        - 'export FUNCTION_NAME=test'
+
+  - id: posix-array
+    name: "Arrays (bashism in /bin/sh)"
+    description: |
+      Arrays are a bash extension and not available in POSIX sh.
+      Use space-separated strings or positional parameters instead.
+    severity: error
+    pattern: '\w+\=\([^)]*\)'
+    shebang_match: '^#!/bin/sh'
+    negative_pattern: '^\s*#|\w+\(\)\s*\{'
+    fix_type: suggest
+    fix_template: "Use space-separated strings or positional parameters"
+    examples:
+      bad: 'files=(one.txt two.txt three.txt)'
+      good: 'files="one.txt two.txt three.txt"'
+    tags: [posix, bashism]
+    test_cases:
+      should_match:
+        - 'files=(one.txt two.txt three.txt)'
+        - 'arr=(a b c)'
+        - '  items=(first second)'
+        - 'COLORS=(red green blue)'
+      should_not_match:
+        - 'files="one.txt two.txt"'
+        - 'func() { echo; }'
+        - 'myfunc() {'
+        - 'if test $(cmd); then'
+
+  - id: posix-source-command
+    name: "'source' builtin (bashism in /bin/sh)"
+    description: |
+      'source' is a bash builtin. POSIX sh uses '.' (dot) to source files.
+    severity: error
+    pattern: '^\s*source\s+'
+    shebang_match: '^#!/bin/sh'
+    fix_type: replace
+    fix_template: '. '
+    examples:
+      bad: 'source ./config.sh'
+      good: '. ./config.sh'
+    tags: [posix, bashism]
+    test_cases:
+      should_match:
+        - 'source ./config.sh'
+        - 'source /etc/profile'
+        - '  source "$HOME/.env"'
+      should_not_match:
+        - '. ./config.sh'
+        - '. /etc/profile'
+        - 'SOURCE_FILE=config.sh'
+        - 'open_source=true'
+        - 'resource_file=x'
+
+  - id: posix-local-keyword
+    name: "'local' keyword (bashism in /bin/sh)"
+    description: |
+      'local' is not defined by POSIX, though most sh implementations support it.
+      For strict POSIX compliance, avoid local variables or use a naming convention.
+    severity: info
+    pattern: '^\s*local\s+'
+    shebang_match: '^#!/bin/sh'
+    fix_type: suggest
+    fix_template: "Use a naming convention like _funcname_var instead of local"
+    examples:
+      bad: 'local result=""'
+      good: '_myfunc_result=""'
+    tags: [posix, bashism]
+    test_cases:
+      should_match:
+        - 'local result=""'
+        - 'local -r readonly_var=5'
+        - '  local tmp_file'
+      should_not_match:
+        - 'LOCALE=en_US'
+        - 'localhost=127.0.0.1'
+        - 'localtime=$(date)'
+
+  - id: posix-process-substitution
+    name: "Process substitution <() (bashism in /bin/sh)"
+    description: |
+      Process substitution <(...) and >(...) is a bash extension.
+      Use temporary files or pipes for POSIX sh.
+    severity: error
+    pattern: '[<>]\([^)]+\)'
+    shebang_match: '^#!/bin/sh'
+    negative_pattern: '^\s*#|\$\('
+    fix_type: suggest
+    fix_template: "Use temporary files or pipes instead"
+    examples:
+      bad: 'diff <(sort file1) <(sort file2)'
+      good: |
+        sort file1 > /tmp/sorted1
+        sort file2 > /tmp/sorted2
+        diff /tmp/sorted1 /tmp/sorted2
+    tags: [posix, bashism]
+    test_cases:
+      should_match:
+        - 'diff <(sort file1) <(sort file2)'
+        - 'while read line; do echo "$line"; done < <(cat file)'
+        - 'tee >(grep error > errors.log)'
+      should_not_match:
+        - 'result=$(command)'
+        - 'echo "$(date)"'
+        - 'if [ $(wc -l < file) -gt 10 ]; then'
+
+  - id: posix-here-string
+    name: "Here-string <<< (bashism in /bin/sh)"
+    description: |
+      Here-strings (<<<) are a bash extension.
+      Use echo with a pipe or a here-document for POSIX sh.
+    severity: error
+    pattern: '<<<'
+    shebang_match: '^#!/bin/sh'
+    fix_type: suggest
+    fix_template: 'echo "$var" | command'
+    examples:
+      bad: 'grep "pattern" <<< "$string"'
+      good: 'echo "$string" | grep "pattern"'
+    tags: [posix, bashism]
+    test_cases:
+      should_match:
+        - 'grep "pattern" <<< "$string"'
+        - 'read -r var <<< "hello"'
+        - '  bc <<< "2+3"'
+      should_not_match:
+        - 'echo "$string" | grep "pattern"'
+        - 'cat <<EOF'
+
+  - id: posix-string-equals
+    name: "== in test (bashism in /bin/sh)"
+    description: |
+      The == operator in [ ] test is a bashism. POSIX requires single =.
+    severity: warning
+    pattern: '(?:^|[^\[])\[\s+\S+\s+==\s+'
+    shebang_match: '^#!/bin/sh'
+    fix_type: suggest
+    fix_template: 'Use = instead of == in [ ] tests'
+    examples:
+      bad: '[ "$var" == "value" ]'
+      good: '[ "$var" = "value" ]'
+    tags: [posix, bashism]
+    test_cases:
+      should_match:
+        - '[ "$var" == "value" ]'
+        - '[ "$x" == "$y" ]'
+        - '  [ "$status" == "ok" ]'
+      should_not_match:
+        - '[ "$var" = "value" ]'
+        - '[[ "$var" == "value" ]]'
+        - 'if [ "$x" = "$y" ]; then'
