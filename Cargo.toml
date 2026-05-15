@@ -1,0 +1,46 @@
+[package]
+name = "macbash"
+version = "1.4.0"
+edition = "2024"
+rust-version = "1.94"
+description = "Check and fix bash scripts so they work on macOS"
+license = "Apache-2.0"
+repository = "https://github.com/hyperi-io/macbash"
+homepage = "https://github.com/hyperi-io/macbash"
+readme = "README.md"
+keywords = ["bash", "macos", "lint", "shell", "portability"]
+categories = ["command-line-utilities", "development-tools"]
+authors = ["HyperI Pty Limited"]
+
+[[bin]]
+name = "macbash"
+path = "src/main.rs"
+
+[lib]
+name = "macbash"
+path = "src/lib.rs"
+
+[dependencies]
+anstream = "0.6"
+anstyle = "1"
+anyhow = "1"
+clap = { version = "4.5", features = ["derive"] }
+regex = "1.10"
+rust-embed = { version = "8", features = ["debug-embed"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+serde_yaml_ng = "0.10"
+thiserror = "2"
+
+[dev-dependencies]
+assert_cmd = "2"
+insta = { version = "1", features = ["json", "yaml"] }
+predicates = "3"
+tempfile = "3"
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+strip = true
+opt-level = 3
+panic = "abort"
