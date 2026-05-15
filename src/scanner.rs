@@ -519,4 +519,103 @@ mod tests {
         assert_eq!(matches.len(), 1);
         assert_eq!(matches[0].line, 2);
     }
+
+    #[test]
+    fn group_by_file_groups_correctly() {
+        let m: Vec<MatchHit> = vec![
+            MatchHit {
+                rule_id: "r".into(),
+                file: "a.sh".into(),
+                line: 1,
+                column: 1,
+                content: String::new(),
+                matched_str: String::new(),
+                fixed_str: None,
+            },
+            MatchHit {
+                rule_id: "r".into(),
+                file: "b.sh".into(),
+                line: 1,
+                column: 1,
+                content: String::new(),
+                matched_str: String::new(),
+                fixed_str: None,
+            },
+            MatchHit {
+                rule_id: "r".into(),
+                file: "a.sh".into(),
+                line: 2,
+                column: 1,
+                content: String::new(),
+                matched_str: String::new(),
+                fixed_str: None,
+            },
+        ];
+        let g = group_by_file(&m);
+        assert_eq!(g.len(), 2);
+        assert_eq!(g["a.sh"].len(), 2);
+        assert_eq!(g["b.sh"].len(), 1);
+    }
+
+    /// Wrap a single-line example into a full script body matching the rule's
+    /// shebang gate. Rules whose pattern itself targets the shebang line are
+    /// fed verbatim (a synthetic shebang would self-match those rules).
+    fn synthesise_script(rule: &Rule, example: &str) -> String {
+        if rule.pattern.starts_with("^#") {
+            // Shebang-pattern rule — feed example directly as the shebang line.
+            return format!("{example}\n");
+        }
+        let header = if rule.shebang_match.is_empty() {
+            "#!/bin/bash"
+        } else if rule.shebang_match.contains("sh") && !rule.shebang_match.contains("bash") {
+            "#!/bin/sh"
+        } else {
+            "#!/bin/bash"
+        };
+        format!("{header}\n{example}\n")
+    }
+
+    #[test]
+    fn every_should_match_example_matches_its_own_rule() {
+        let rs = load_builtin().unwrap();
+        let s = Scanner::new(&rs).unwrap();
+        let mut failures: Vec<String> = Vec::new();
+        for rule in &rs.rules {
+            for ex in &rule.test_cases.should_match {
+                let text = synthesise_script(rule, ex);
+                let hits = s.scan_text(&text, "ex.sh");
+                if !hits.iter().any(|h| h.rule_id == rule.id) {
+                    failures.push(format!("rule {} did not match: {ex:?}", rule.id));
+                }
+            }
+        }
+        assert!(
+            failures.is_empty(),
+            "should_match failures ({}):\n{}",
+            failures.len(),
+            failures.join("\n")
+        );
+    }
+
+    #[test]
+    fn no_should_not_match_example_matches_its_own_rule() {
+        let rs = load_builtin().unwrap();
+        let s = Scanner::new(&rs).unwrap();
+        let mut failures: Vec<String> = Vec::new();
+        for rule in &rs.rules {
+            for ex in &rule.test_cases.should_not_match {
+                let text = synthesise_script(rule, ex);
+                let hits = s.scan_text(&text, "ex.sh");
+                if hits.iter().any(|h| h.rule_id == rule.id) {
+                    failures.push(format!("rule {} unexpectedly matched: {ex:?}", rule.id));
+                }
+            }
+        }
+        assert!(
+            failures.is_empty(),
+            "should_not_match failures ({}):\n{}",
+            failures.len(),
+            failures.join("\n")
+        );
+    }
 }
