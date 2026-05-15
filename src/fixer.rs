@@ -77,7 +77,7 @@ impl Fixer {
         }
         // Rightmost first so column offsets remain valid as we patch.
         for v in by_line.values_mut() {
-            v.sort_by(|a, b| b.column.cmp(&a.column));
+            v.sort_by_key(|m| std::cmp::Reverse(m.column));
         }
 
         let mut out_lines: Vec<String> = Vec::new();
