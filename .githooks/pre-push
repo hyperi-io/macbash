@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+# Enforce hyperi-ci push instead of bare git push
+# hyperi-ci push sets HYPERCI_PUSH=1 before calling git push
+
+if [ "${HYPERCI_PUSH:-}" = "1" ]; then
+    exit 0
+fi
+
+echo ''
+echo '  Push blocked. Use hyperi-ci push instead of git push.'
+echo ''
+echo '    hyperi-ci push            # normal push with pre-checks'
+echo '    hyperi-ci push --release  # push + auto-publish if CI passes'
+echo '    hyperi-ci push --no-ci    # push, skip CI'
+echo ''
+echo '  To bypass (emergency): HYPERCI_PUSH=1 git push'
+echo ''
+exit 1
