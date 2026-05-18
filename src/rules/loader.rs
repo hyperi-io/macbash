@@ -210,6 +210,30 @@ mod tests {
     }
 
     #[test]
+    fn load_builtin_every_rule_has_both_test_case_sides() {
+        // Mirrors the Go TestAllRulesHaveTestCases guard: every shipped rule
+        // must carry at least one should_match and one should_not_match
+        // example so the corpus iteration tests in scanner can't silently
+        // skip a rule that lost its examples.
+        let rs = load_builtin().unwrap();
+        let mut missing: Vec<String> = Vec::new();
+        for r in &rs.rules {
+            if r.test_cases.should_match.is_empty() {
+                missing.push(format!("{} (no should_match)", r.id));
+            }
+            if r.test_cases.should_not_match.is_empty() {
+                missing.push(format!("{} (no should_not_match)", r.id));
+            }
+        }
+        assert!(
+            missing.is_empty(),
+            "rules missing test cases ({}):\n{}",
+            missing.len(),
+            missing.join("\n")
+        );
+    }
+
+    #[test]
     fn load_from_file_parses_minimal_yaml() {
         let body = "version: \"1.0\"\nrules:\n  - id: test-rule\n    name: Test Rule\n    description: A test rule\n    severity: warning\n    pattern: 'test\\s+pattern'\n    fix_type: suggest\n    fix_template: fixed pattern\n";
         let dir = write_temp("rules.yaml", body);
