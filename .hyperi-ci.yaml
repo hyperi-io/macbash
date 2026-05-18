@@ -1,0 +1,28 @@
+# Project:   machbash-rust
+# File:      .hyperi-ci.yaml
+# Purpose:   HyperI CI configuration
+#
+# License:   Apache-2.0 — HYPERI PTY LIMITED
+# Copyright: (c) 2026 HYPERI PTY LIMITED
+#
+# Override defaults with HYPERCI_* env vars.
+# Reference: config/defaults.yaml in hyperi-ci.
+
+language: rust
+project:
+  status: experimental
+quality:
+  enabled: true
+test:
+  enabled: true
+  coverage: false
+build:
+  enabled: true
+  strategies:
+  - native
+  rust:
+    features: all
+    targets: []
+publish:
+  enabled: true
+  target: internal

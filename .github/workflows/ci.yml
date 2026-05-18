@@ -1,0 +1,27 @@
+# Project:   machbash-rust
+# File:      .github/workflows/ci.yml
+# Purpose:   CI pipeline
+#
+# License:   Apache-2.0 — HYPERI PTY LIMITED
+# Copyright: (c) 2026 HYPERI PTY LIMITED
+
+name: CI
+
+"on":
+  push:
+    branches: ["**"]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      tag:
+        type: string
+        required: true
+        description: "Tag to publish (e.g. v1.3.0)"
+
+jobs:
+  ci:
+    uses: hyperi-io/hyperi-ci/.github/workflows/rust-ci.yml@main
+    with:
+      tag: ${{ inputs.tag || '' }}
+    secrets: inherit
