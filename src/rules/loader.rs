@@ -70,11 +70,10 @@ pub fn load_from_file(path: &Path) -> Result<RuleSet, LoadError> {
 }
 
 fn parse_ruleset(bytes: &[u8], source_name: &str) -> Result<RuleSet, LoadError> {
-    let mut rs: RuleSet =
-        serde_yaml_ng::from_slice(bytes).map_err(|e| LoadError::Parse {
-            source_name: source_name.to_string(),
-            source: e,
-        })?;
+    let mut rs: RuleSet = serde_yaml_ng::from_slice(bytes).map_err(|e| LoadError::Parse {
+        source_name: source_name.to_string(),
+        source: e,
+    })?;
     for r in &mut rs.rules {
         validate_rule(r, source_name)?;
     }
@@ -191,8 +190,7 @@ mod tests {
     #[test]
     fn load_builtin_contains_expected_rule_ids() {
         let rs = load_builtin().unwrap();
-        let ids: std::collections::HashSet<&str> =
-            rs.rules.iter().map(|r| r.id.as_str()).collect();
+        let ids: std::collections::HashSet<&str> = rs.rules.iter().map(|r| r.id.as_str()).collect();
         for expected in [
             "sed-inplace-no-backup",
             "grep-perl-regex",

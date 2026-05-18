@@ -9,5 +9,5 @@
 pub mod loader;
 pub mod types;
 
-pub use loader::{load_builtin, load_from_file, merge, merge_some, validate_rule, LoadError};
+pub use loader::{LoadError, load_builtin, load_from_file, merge, merge_some, validate_rule};
 pub use types::{Examples, FixType, MatchHit, Rule, RuleSet, Severity, TestCases};

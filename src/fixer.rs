@@ -58,11 +58,7 @@ impl Fixer {
         }
     }
 
-    pub fn fix_file(
-        &mut self,
-        path: &Path,
-        matches: &[MatchHit],
-    ) -> Result<FixOutcome, FixError> {
+    pub fn fix_file(&mut self, path: &Path, matches: &[MatchHit]) -> Result<FixOutcome, FixError> {
         let text = std::fs::read_to_string(path).map_err(|e| FixError::Read {
             path: path.display().to_string(),
             source: e,
@@ -174,12 +170,10 @@ pub fn has_unfixable_pcre(pattern: &str) -> bool {
 pub fn extract_grep_pattern(line: &str) -> String {
     static SINGLE: OnceLock<Regex> = OnceLock::new();
     static DOUBLE: OnceLock<Regex> = OnceLock::new();
-    let single = SINGLE.get_or_init(|| {
-        Regex::new(r#"grep\s+-[a-zA-Z]*P[a-zA-Z]*\s+'([^']*)'"#).unwrap()
-    });
-    let double = DOUBLE.get_or_init(|| {
-        Regex::new(r#"grep\s+-[a-zA-Z]*P[a-zA-Z]*\s+"([^"]*)""#).unwrap()
-    });
+    let single =
+        SINGLE.get_or_init(|| Regex::new(r#"grep\s+-[a-zA-Z]*P[a-zA-Z]*\s+'([^']*)'"#).unwrap());
+    let double =
+        DOUBLE.get_or_init(|| Regex::new(r#"grep\s+-[a-zA-Z]*P[a-zA-Z]*\s+"([^"]*)""#).unwrap());
     if let Some(c) = single.captures(line) {
         return c[1].to_string();
     }
@@ -197,12 +191,10 @@ pub fn can_transform_grep_p(line: &str) -> bool {
 fn transform_grep_p_to_e(line: &str) -> (String, bool) {
     static SINGLE: OnceLock<Regex> = OnceLock::new();
     static DOUBLE: OnceLock<Regex> = OnceLock::new();
-    let single = SINGLE.get_or_init(|| {
-        Regex::new(r#"(grep\s+)(-[a-zA-Z]*P[a-zA-Z]*)(\s+)'([^']*)'"#).unwrap()
-    });
-    let double = DOUBLE.get_or_init(|| {
-        Regex::new(r#"(grep\s+)(-[a-zA-Z]*P[a-zA-Z]*)(\s+)"([^"]*)""#).unwrap()
-    });
+    let single = SINGLE
+        .get_or_init(|| Regex::new(r#"(grep\s+)(-[a-zA-Z]*P[a-zA-Z]*)(\s+)'([^']*)'"#).unwrap());
+    let double = DOUBLE
+        .get_or_init(|| Regex::new(r#"(grep\s+)(-[a-zA-Z]*P[a-zA-Z]*)(\s+)"([^"]*)""#).unwrap());
     let (re, quote) = if single.is_match(line) {
         (single, '\'')
     } else if double.is_match(line) {
@@ -299,7 +291,11 @@ mod tests {
     #[test]
     fn transforms_grep_p_with_simple_d() {
         let out = run_fix("grep -P '\\d+' f\n");
-        assert!(out.content.contains("grep -E '[0-9]+'"), "got: {:?}", out.content);
+        assert!(
+            out.content.contains("grep -E '[0-9]+'"),
+            "got: {:?}",
+            out.content
+        );
         assert!(out.fixed_count >= 1);
     }
 
