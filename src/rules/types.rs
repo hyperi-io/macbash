@@ -193,7 +193,12 @@ mod tests {
 
     #[test]
     fn fix_type_as_str_round_trip() {
-        for f in [FixType::Replace, FixType::Suggest, FixType::Function, FixType::Transform] {
+        for f in [
+            FixType::Replace,
+            FixType::Suggest,
+            FixType::Function,
+            FixType::Transform,
+        ] {
             assert_eq!(serde_yaml_ng::from_str::<FixType>(f.as_str()).unwrap(), f);
         }
     }

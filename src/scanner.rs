@@ -186,11 +186,7 @@ impl Scanner {
 /// Filter matches to those at or above `min`. The Go implementation uses
 /// match.Rule.Severity directly; here we look the rule up by id from the
 /// RuleSet to avoid stuffing a borrowed reference into MatchHit.
-pub fn filter_by_severity(
-    matches: Vec<MatchHit>,
-    min: Severity,
-    rs: &RuleSet,
-) -> Vec<MatchHit> {
+pub fn filter_by_severity(matches: Vec<MatchHit>, min: Severity, rs: &RuleSet) -> Vec<MatchHit> {
     let min_rank = min.order();
     let sev: BTreeMap<&str, Severity> = rs
         .rules
@@ -241,7 +237,7 @@ pub fn detect_heredoc(line: &str) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::rules::{load_builtin, FixType, Rule, RuleSet, Severity};
+    use crate::rules::{FixType, Rule, RuleSet, Severity, load_builtin};
 
     fn rule(id: &str, pattern: &str, sev: Severity) -> Rule {
         Rule {
@@ -326,10 +322,7 @@ mod tests {
         };
         let s = Scanner::new(&rs).unwrap();
 
-        let sh_hits = s.scan_text(
-            "#!/bin/sh\nif [[ -f foo ]]; then echo yes; fi\n",
-            "sh.sh",
-        );
+        let sh_hits = s.scan_text("#!/bin/sh\nif [[ -f foo ]]; then echo yes; fi\n", "sh.sh");
         assert_eq!(sh_hits.len(), 1, "[[ in /bin/sh must match");
 
         let bash_hits = s.scan_text(
@@ -440,8 +433,14 @@ mod tests {
                 fixed_str: None,
             })
             .collect();
-        assert_eq!(filter_by_severity(matches.clone(), Severity::Info, &rs).len(), 4);
-        assert_eq!(filter_by_severity(matches.clone(), Severity::Warning, &rs).len(), 2);
+        assert_eq!(
+            filter_by_severity(matches.clone(), Severity::Info, &rs).len(),
+            4
+        );
+        assert_eq!(
+            filter_by_severity(matches.clone(), Severity::Warning, &rs).len(),
+            2
+        );
         assert_eq!(filter_by_severity(matches, Severity::Error, &rs).len(), 1);
     }
 

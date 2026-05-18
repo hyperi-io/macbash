@@ -176,12 +176,7 @@ impl<'a, W: Write> Formatter<'a, W> {
 
     fn write_styled(&mut self, style: Style, text: &str) -> Result<(), OutputError> {
         if self.use_colour {
-            write!(
-                self.w,
-                "{}{text}{}",
-                style.render(),
-                style.render_reset()
-            )?;
+            write!(self.w, "{}{text}{}", style.render(), style.render_reset())?;
         } else {
             self.w.write_all(text.as_bytes())?;
         }
@@ -223,8 +218,7 @@ fn count_by_severity(matches: &[MatchHit], rules: &RuleSet) -> (usize, usize, us
 }
 
 fn can_transform_match(rule_id: &str, content: &str) -> bool {
-    matches!(rule_id, "grep-perl-regex" | "grep-only-matching-P")
-        && can_transform_grep_p(content)
+    matches!(rule_id, "grep-perl-regex" | "grep-only-matching-P") && can_transform_grep_p(content)
 }
 
 fn severity_style(s: Severity) -> Style {
@@ -299,10 +293,7 @@ mod tests {
     fn json_total_issues_matches_matches_array_length() {
         let rs = load_builtin().unwrap();
         let s = Scanner::new(&rs).unwrap();
-        let ms = s.scan_text(
-            "#!/bin/bash\nsed -i 's/a/b/' f\ngrep -P '\\d+' f\n",
-            "t.sh",
-        );
+        let ms = s.scan_text("#!/bin/bash\nsed -i 's/a/b/' f\ngrep -P '\\d+' f\n", "t.sh");
         let mut buf = Vec::new();
         Formatter::new(&mut buf, false, &rs).json(&ms).unwrap();
         let v: serde_json::Value = serde_json::from_slice(&buf).unwrap();
