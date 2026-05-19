@@ -1,6 +1,6 @@
 [package]
 name = "macbash"
-version = "1.4.0"
+version = "1.5.1"
 edition = "2024"
 rust-version = "1.94"
 description = "Check and fix bash scripts so they work on macOS"
