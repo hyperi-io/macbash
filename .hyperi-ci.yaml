@@ -25,4 +25,5 @@ build:
     targets: []
 publish:
   enabled: true
-  target: internal
+  target: oss
+  channel: release
