@@ -178,6 +178,10 @@ fn run_inner(mut cli: Cli) -> Result<ExitCode> {
 }
 
 fn run_fix(cli: &Cli, matches: &[MatchHit], rules: &RuleSet) -> Result<ExitCode> {
+    eprintln!(
+        "EXPERIMENTAL: macbash fix mode is experimental — review output and diff \
+         before committing rewritten scripts."
+    );
     let mut fixer = Fixer::new(rules);
     let mut fixed_total = 0_usize;
     let mut unfixed_total = 0_usize;

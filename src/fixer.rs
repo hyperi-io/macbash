@@ -2,6 +2,9 @@
 //  File:      src/fixer.rs
 //  Purpose:   Apply Replace + Transform fixes; bash -n post-validation hook
 //  Language:  Rust
+//  Status:    EXPERIMENTAL — fix transforms (-w / -o) have not been validated
+//             at scale. Output may be incorrect on edge cases. Always diff
+//             before committing rewritten scripts.
 //
 //  License:   Apache-2.0
 //  Copyright: (c) 2025-2026 HYPERI PTY LIMITED
