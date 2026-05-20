@@ -42,10 +42,8 @@ jobs:
       matrix:
         arch: [amd64, arm64]
     steps:
-      - name: Checkout
+      - name: Checkout (default branch — packaging code lives here, not in the tagged source)
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
-        with:
-          ref: ${{ inputs.tag }}
 
       - name: Wait for raw linux binary on R2
         shell: bash
@@ -108,10 +106,8 @@ jobs:
       matrix:
         arch: [amd64, arm64]
     steps:
-      - name: Checkout
+      - name: Checkout (default branch — packaging code lives here, not in the tagged source)
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
-        with:
-          ref: ${{ inputs.tag }}
 
       - name: Install nfpm
         shell: bash
@@ -174,10 +170,8 @@ jobs:
     runs-on: ubuntu-latest
     needs: [linux-tarball]
     steps:
-      - name: Checkout
+      - name: Checkout (default branch — packaging code lives here, not in the tagged source)
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
-        with:
-          ref: ${{ inputs.tag }}
 
       - name: Render
         shell: bash
