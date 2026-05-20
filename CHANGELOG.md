@@ -1,3 +1,11 @@
+## [1.5.2](https://github.com/hyperi-io/macbash/compare/v1.5.1...v1.5.2) (2026-05-20)
+
+
+### Bug Fixes
+
+* add uninstall.sh + uninstall.ps1 to packaging framework ([c8d4065](https://github.com/hyperi-io/macbash/commit/c8d4065a5e1f798cc91ac7f93fd19f22c51324a4))
+* make rendered install.sh pass macbash and shellcheck ([b7595e1](https://github.com/hyperi-io/macbash/commit/b7595e16b636f9e743c62a5e798d636989a62674))
+
 ## [1.5.1](https://github.com/hyperi-io/macbash/compare/v1.5.0...v1.5.1) (2026-05-19)
 
 
