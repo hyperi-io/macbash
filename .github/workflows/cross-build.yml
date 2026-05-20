@@ -1,0 +1,186 @@
+# Project:   macbash
+# File:      .github/workflows/cross-build.yml
+# Purpose:   Build darwin + windows binaries (outside hyperi-ci linux matrix) and
+#            upload to the same R2 path layout hyperi-ci uses.
+#
+# License:   Apache-2.0
+# Copyright: (c) 2025-2026 HYPERI PTY LIMITED
+#
+# Trigger:   - on tag push (vX.Y.Z) → builds the tag's source
+#            - workflow_dispatch with `tag` input → retroactive build for an
+#              existing tag (use when hyperi-ci already created the tag and you
+#              want to add cross-platform binaries to the same R2 version dir).
+#
+# Status:    Windows builds are EXPERIMENTAL — best effort, not in the formal
+#            test path (see packaging/README.md).
+
+name: Cross-build
+
+"on":
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        type: string
+        required: true
+        description: "Tag to retroactively cross-build (e.g. v1.5.2)"
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: ${{ matrix.os_arch }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: x86_64-apple-darwin
+            runner: macos-13
+            os_arch: darwin-amd64
+            zigbuild: false
+          - target: aarch64-apple-darwin
+            runner: macos-latest
+            os_arch: darwin-arm64
+            zigbuild: false
+          - target: x86_64-pc-windows-gnu
+            runner: ubuntu-latest
+            os_arch: windows-amd64
+            zigbuild: true
+            ext: ".exe"
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          ref: ${{ inputs.tag || github.ref_name }}
+
+      - name: Derive version from tag
+        id: ver
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag="${{ inputs.tag || github.ref_name }}"
+          version="${tag#v}"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          # Stamp Cargo.toml so the binary's --version output matches the tag.
+          # Same trick hyperi-ci's build job uses on the linux matrix.
+          python3 - <<PY
+          import re, pathlib
+          p = pathlib.Path("Cargo.toml"); t = p.read_text()
+          t = re.sub(r'^version\s*=\s*"[^"]*"', f'version = "$version"', t, count=1, flags=re.MULTILINE)
+          p.write_text(t)
+          pathlib.Path("VERSION").write_text("$version\n")
+          PY
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
+        with:
+          toolchain: stable
+          targets: ${{ matrix.target }}
+
+      - name: Cache cargo registry + target
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: cross-${{ matrix.target }}-${{ hashFiles('Cargo.lock') }}
+
+      # Windows via cargo-zigbuild — pure Linux cross-compile, no MSVC needed.
+      - name: Install zig
+        if: matrix.zigbuild
+        uses: mlugg/setup-zig@8d6198c65fb0feaa111df26e6b467fea8345e46f # v2.0.5
+        with:
+          version: 0.15.1
+
+      - name: Install cargo-zigbuild
+        if: matrix.zigbuild
+        shell: bash
+        run: cargo install --locked cargo-zigbuild
+
+      - name: Build (native)
+        if: ${{ !matrix.zigbuild }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo build --release --target ${{ matrix.target }}
+
+      - name: Build (cargo-zigbuild)
+        if: matrix.zigbuild
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo zigbuild --release --target ${{ matrix.target }}
+
+      - name: Stage artifact
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          ext="${{ matrix.ext || '' }}"
+          os_arch="${{ matrix.os_arch }}"
+          src="target/${{ matrix.target }}/release/macbash${ext}"
+          raw_name="macbash-${os_arch}${ext}"
+          cp "$src" "dist/${raw_name}"
+          # Tarball / zip — what brew/scoop/winget download
+          stage_dir="dist/macbash-${os_arch}-stage"
+          mkdir -p "$stage_dir"
+          cp "$src" "$stage_dir/macbash${ext}"
+          [ -f LICENSE ] && cp LICENSE "$stage_dir/" || true
+          if [ -n "$ext" ]; then
+            # Windows: zip
+            ( cd dist && zip -q "macbash-${os_arch}.zip" -j "macbash-${os_arch}-stage/"* )
+            archive="macbash-${os_arch}.zip"
+          else
+            # Unix: tar.gz
+            tar -czf "dist/macbash-${os_arch}.tar.gz" -C dist "macbash-${os_arch}-stage"
+            archive="macbash-${os_arch}.tar.gz"
+          fi
+          rm -rf "$stage_dir"
+          # Per-arch checksums (raw binary + archive). Per-arch filenames so
+          # multiple matrix uploads don't last-write-wins on s3.
+          sums_file="dist/macbash-${os_arch}.sha256"
+          if command -v shasum >/dev/null 2>&1; then
+            ( cd dist && shasum -a 256 "${raw_name}" "${archive}" ) > "$sums_file"
+          else
+            ( cd dist && sha256sum "${raw_name}" "${archive}" ) > "$sums_file"
+          fi
+          ls -la dist
+
+      - name: Configure AWS CLI for Cloudflare R2
+        env:
+          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -z "${R2_ACCESS_KEY_ID:-}" ] || [ -z "${R2_SECRET_ACCESS_KEY:-}" ]; then
+            echo "::error::R2_ACCESS_KEY_ID / R2_SECRET_ACCESS_KEY not set"
+            exit 1
+          fi
+          aws configure set aws_access_key_id "$R2_ACCESS_KEY_ID"
+          aws configure set aws_secret_access_key "$R2_SECRET_ACCESS_KEY"
+          aws configure set region auto
+
+      - name: Upload to R2
+        env:
+          R2_ENDPOINT: https://98d20454e2af7a9397ad9366a1641659.r2.cloudflarestorage.com
+          R2_BUCKET: bin-repo
+          TAG: ${{ steps.ver.outputs.tag }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          dest_versioned="s3://${R2_BUCKET}/macbash/${TAG}/"
+          dest_latest="s3://${R2_BUCKET}/macbash/latest/"
+          for f in dist/*; do
+            for dest in "$dest_versioned" "$dest_latest"; do
+              aws s3 cp --endpoint-url "$R2_ENDPOINT" "$f" "$dest"
+            done
+          done
+          echo "Published to https://downloads.hyperi.io/macbash/${TAG}/"
