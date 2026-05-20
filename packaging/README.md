@@ -19,7 +19,27 @@ covers it.
 
 ## What it produces
 
-Today: `install.sh`, `uninstall.sh`, `install.ps1`, `uninstall.ps1`.
+Static templates (rendered once by `render.sh`, served as-is to users):
+
+- `install.sh`, `uninstall.sh` — POSIX curl-pipe install/uninstall
+- `install.ps1`, `uninstall.ps1` — Windows PowerShell equivalents
+
+Per-version release templates (rendered by `render-release.sh <version>`,
+re-rendered each release to bake in version + per-arch SHA256 values):
+
+- `homebrew/<binary>.rb` — formula for the project's Homebrew tap
+- `nfpm.yaml` — config for nfpm to build `.deb` and `.rpm` packages
+- `winget/<package-id>.yaml`, `.installer.yaml`, `.locale.en-US.yaml`
+  — WinGet manifest trio
+- `scoop/<binary>.json` — Scoop manifest
+
+The packaging framework also assumes two distribution channels live in
+sibling repos on the same org:
+
+- `<org>/homebrew-tap` — `brew tap <org>/tap && brew install <binary>`
+- `<org>/scoop-bucket` — `scoop bucket add <org> https://github.com/<org>/scoop-bucket && scoop install <binary>`
+
+These are populated per release by copying the rendered manifests in.
 
 Both detect OS/arch, download the matching binary from the configured
 R2 download base (or any HTTP host), verify a SHA-256 checksum if
@@ -92,7 +112,13 @@ survive untouched.
 | `packaging/templates/uninstall.sh` | POSIX uninstaller (locates the binary, supports `--all` PATH sweep) |
 | `packaging/templates/install.ps1` | PowerShell `irm \| iex` installer template |
 | `packaging/templates/uninstall.ps1` | PowerShell uninstaller (supports `-All` for thorough sweep) |
+| `packaging/render-release.sh` | Per-version render. Pulls sha256s from R2 (or `--from-dir`) and writes ready-to-publish artefacts |
+| `packaging/templates-release/homebrew/formula.rb` | Homebrew formula template |
+| `packaging/templates-release/nfpm.yaml` | nfpm config template (deb + rpm) |
+| `packaging/templates-release/winget/*.yaml` | WinGet manifest trio |
+| `packaging/templates-release/scoop/manifest.json` | Scoop manifest template |
 | `packaging/dist/` | Rendered output (gitignored) |
+| `packaging/dist/release/` | Per-version rendered output (gitignored) |
 
 ## Adding a new template
 
