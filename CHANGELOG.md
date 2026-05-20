@@ -1,3 +1,10 @@
+## [1.5.3](https://github.com/hyperi-io/macbash/compare/v1.5.2...v1.5.3) (2026-05-20)
+
+
+### Bug Fixes
+
+* package.yml checks out default branch not the input tag ([166a221](https://github.com/hyperi-io/macbash/commit/166a22122d8e982eaa9564de8971669b439e4f24))
+
 ## [1.5.2](https://github.com/hyperi-io/macbash/compare/v1.5.1...v1.5.2) (2026-05-20)
 
 
