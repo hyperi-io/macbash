@@ -29,8 +29,6 @@ re-rendered each release to bake in version + per-arch SHA256 values):
 
 - `homebrew/<binary>.rb` — formula for the project's Homebrew tap
 - `nfpm.yaml` — config for nfpm to build `.deb` and `.rpm` packages
-- `winget/<package-id>.yaml`, `.installer.yaml`, `.locale.en-US.yaml`
-  — WinGet manifest trio
 - `scoop/<binary>.json` — Scoop manifest
 
 The packaging framework also assumes two distribution channels live in
@@ -45,9 +43,10 @@ Both detect OS/arch, download the matching binary from the configured
 R2 download base (or any HTTP host), verify a SHA-256 checksum if
 available, and install to a system or user directory.
 
-Future channels (Homebrew formula, nfpm deb/rpm, WinGet, Scoop) will
-plug into the same template set — same `packaging.env`, additional
-template files.
+Adding a new channel: drop a file into `packaging/templates/` or
+`packaging/templates-release/`, reference any `${PKG_*}` variable,
+extend the `WHITELIST` line in the relevant render script. No
+framework changes required.
 
 ## How to use it in a new project
 
@@ -115,7 +114,6 @@ survive untouched.
 | `packaging/render-release.sh` | Per-version render. Pulls sha256s from R2 (or `--from-dir`) and writes ready-to-publish artefacts |
 | `packaging/templates-release/homebrew/formula.rb` | Homebrew formula template |
 | `packaging/templates-release/nfpm.yaml` | nfpm config template (deb + rpm) |
-| `packaging/templates-release/winget/*.yaml` | WinGet manifest trio |
 | `packaging/templates-release/scoop/manifest.json` | Scoop manifest template |
 | `packaging/dist/` | Rendered output (gitignored) |
 | `packaging/dist/release/` | Per-version rendered output (gitignored) |

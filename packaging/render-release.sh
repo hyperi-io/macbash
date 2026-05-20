@@ -1,8 +1,8 @@
 #!/bin/sh
 #  Project:   rust-cli-packaging (in-tree framework)
 #  File:      packaging/render-release.sh
-#  Purpose:   Render per-version templates (homebrew, nfpm, winget, scoop)
-#             using checksums fetched from R2 (default) or a local dir.
+#  Purpose:   Render per-version templates (homebrew, nfpm, scoop) using
+#             checksums fetched from R2 (default) or a local dir.
 #  Language:  Shell (POSIX)
 #
 #  License:   Apache-2.0
@@ -61,8 +61,6 @@ command -v envsubst >/dev/null 2>&1 || { echo "render-release.sh: envsubst not f
 : "${PKG_VENDOR:?packaging.env must set PKG_VENDOR}"
 : "${PKG_GITHUB_REPO:?packaging.env must set PKG_GITHUB_REPO}"
 : "${PKG_BREW_CLASS:?packaging.env must set PKG_BREW_CLASS}"
-: "${PKG_WINGET_ID:?packaging.env must set PKG_WINGET_ID}"
-: "${PKG_WINGET_PUBLISHER:?packaging.env must set PKG_WINGET_PUBLISHER}"
 
 PKG_VERSION="$VERSION"
 TAG="v$VERSION"
@@ -133,12 +131,11 @@ done
 
 export PKG_NAME PKG_BINARY PKG_VERSION PKG_DOWNLOAD_BASE PKG_DESCRIPTION \
     PKG_HOMEPAGE PKG_LICENSE PKG_MAINTAINER PKG_VENDOR PKG_GITHUB_REPO \
-    PKG_BREW_CLASS PKG_WINGET_ID PKG_WINGET_PUBLISHER NFPM_ARCH
+    PKG_BREW_CLASS NFPM_ARCH
 
 WHITELIST='${PKG_NAME} ${PKG_BINARY} ${PKG_VERSION} ${PKG_DOWNLOAD_BASE}
 ${PKG_DESCRIPTION} ${PKG_HOMEPAGE} ${PKG_LICENSE} ${PKG_MAINTAINER}
-${PKG_VENDOR} ${PKG_GITHUB_REPO} ${PKG_BREW_CLASS} ${PKG_WINGET_ID}
-${PKG_WINGET_PUBLISHER} ${NFPM_ARCH}
+${PKG_VENDOR} ${PKG_GITHUB_REPO} ${PKG_BREW_CLASS} ${NFPM_ARCH}
 ${PKG_SHA256_LINUX_AMD64_BINARY} ${PKG_SHA256_LINUX_AMD64_TARBALL}
 ${PKG_SHA256_LINUX_ARM64_BINARY} ${PKG_SHA256_LINUX_ARM64_TARBALL}
 ${PKG_SHA256_DARWIN_AMD64_BINARY} ${PKG_SHA256_DARWIN_AMD64_TARBALL}
@@ -151,19 +148,13 @@ mkdir -p "$DIST"
 count=0
 # Walk every file under templates-release/ and mirror the relative path
 # into dist/release/, swapping `formula.rb` -> `${PKG_BINARY}.rb` and
-# winget `version.yaml` -> `${PKG_WINGET_ID}.yaml` etc.
+# `manifest.json` -> `${PKG_BINARY}.json`.
 find "$TEMPLATES" -type f | while IFS= read -r tmpl; do
     rel=${tmpl#"$TEMPLATES/"}
     # Friendly output names per channel
     case "$rel" in
         homebrew/formula.rb)
             out="homebrew/${PKG_BINARY}.rb" ;;
-        winget/version.yaml)
-            out="winget/${PKG_WINGET_ID}.yaml" ;;
-        winget/installer.yaml)
-            out="winget/${PKG_WINGET_ID}.installer.yaml" ;;
-        winget/locale.en-US.yaml)
-            out="winget/${PKG_WINGET_ID}.locale.en-US.yaml" ;;
         scoop/manifest.json)
             out="scoop/${PKG_BINARY}.json" ;;
         *) out="$rel" ;;
