@@ -1,0 +1,13 @@
+# Project:   ${PKG_NAME}
+# File:      ${PKG_WINGET_ID}.yaml (rendered)
+# Purpose:   WinGet version manifest (the index file pointing at installer + locale)
+# Language:  YAML (WinGet manifest schema 1.6)
+#
+# License:   Apache-2.0
+# Copyright: (c) 2025-2026 HYPERI PTY LIMITED
+
+PackageIdentifier: ${PKG_WINGET_ID}
+PackageVersion: ${PKG_VERSION}
+DefaultLocale: en-US
+ManifestType: version
+ManifestVersion: 1.6.0

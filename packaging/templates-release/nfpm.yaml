@@ -1,0 +1,52 @@
+# Project:   ${PKG_NAME}
+# File:      nfpm.yaml (rendered)
+# Purpose:   nfpm config used to build .deb + .rpm packages.
+# Language:  YAML
+#
+# License:   Apache-2.0
+# Copyright: (c) 2025-2026 HYPERI PTY LIMITED
+#
+# Usage:     nfpm package -f packaging/dist/release/nfpm.yaml -p deb -t out/
+#            nfpm package -f packaging/dist/release/nfpm.yaml -p rpm -t out/
+#
+# Notes:     Architecture is set per-build via NFPM_ARCH env var (or by
+#            duplicating the rendered file per arch and editing the `arch`
+#            field). NFPM_ARCH supports nfpm's identifiers (amd64, arm64).
+
+name: ${PKG_BINARY}
+arch: ${NFPM_ARCH}
+platform: linux
+version: ${PKG_VERSION}
+version_schema: semver
+
+maintainer: ${PKG_MAINTAINER}
+description: |
+  ${PKG_DESCRIPTION}
+vendor: ${PKG_VENDOR}
+homepage: ${PKG_HOMEPAGE}
+license: ${PKG_LICENSE}
+section: devel
+priority: optional
+
+contents:
+  # The binary itself. Provided in ./dist/${PKG_BINARY}-linux-${NFPM_ARCH}
+  # by the cross-build step (or by hyperi-ci's main build).
+  - src: ./dist/${PKG_BINARY}-linux-${NFPM_ARCH}
+    dst: /usr/bin/${PKG_BINARY}
+    file_info:
+      mode: 0755
+
+  # License + docs
+  - src: ./LICENSE
+    dst: /usr/share/doc/${PKG_BINARY}/LICENSE
+    file_info:
+      mode: 0644
+
+deb:
+  signature:
+    # Not signing here; rely on R2 https + checksums.sha256 for integrity.
+    {}
+
+rpm:
+  group: Development/Tools
+  compression: zstd
