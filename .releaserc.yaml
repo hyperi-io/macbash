@@ -70,12 +70,11 @@ plugins:
 - - '@semantic-release/changelog'
   - changelogFile: CHANGELOG.md
 - - '@semantic-release/exec'
-  - prepareCmd: python3 -c "from pathlib import Path; import re; Path('VERSION').write_text('${nextRelease.version}\n');
-      ct=Path('Cargo.toml').read_text(); ct=re.sub(r'^version\\s*=\\s*\"[^\"]*\"',
-      'version = \"${nextRelease.version}\"', ct, count=1, flags=re.MULTILINE); Path('Cargo.toml').write_text(ct)"
+  - prepareCmd: python3 scripts/release-prepare.py ${nextRelease.version}
 - - '@semantic-release/git'
   - assets:
     - CHANGELOG.md
     - VERSION
     - Cargo.toml
+    - Cargo.lock
     message: 'chore: version ${nextRelease.version} [skip ci]'
