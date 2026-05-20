@@ -166,7 +166,7 @@ jobs:
           done
 
   manifests:
-    name: Render homebrew / scoop / winget manifests
+    name: Render homebrew + scoop manifests
     runs-on: ubuntu-latest
     needs: [linux-tarball]
     steps:
@@ -196,3 +196,79 @@ jobs:
             aws s3 cp --recursive --endpoint-url "$R2_ENDPOINT" \
               packaging/dist/release/ "$dest"
           done
+
+  publish-tap-bucket:
+    name: Push formula + scoop manifest to tap / bucket repos
+    runs-on: ubuntu-latest
+    needs: [manifests]
+    env:
+      PROJECT: macbash
+      TAP_REPO: hyperi-io/homebrew-tap
+      BUCKET_REPO: hyperi-io/scoop-bucket
+    steps:
+      - name: Mint installation token via org GitHub App
+        id: app-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3
+        with:
+          app-id: ${{ secrets.GH_APP_ID }}
+          private-key: ${{ secrets.GH_APP_PRIVATE_KEY }}
+          owner: hyperi-io
+          repositories: |
+            homebrew-tap
+            scoop-bucket
+
+      - name: Fetch rendered manifests from R2
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p staging
+          curl -fsSL "${R2_PUBLIC}/macbash/${{ inputs.tag }}/manifests/homebrew/${PROJECT}.rb" \
+            -o staging/formula.rb
+          curl -fsSL "${R2_PUBLIC}/macbash/${{ inputs.tag }}/manifests/scoop/${PROJECT}.json" \
+            -o staging/manifest.json
+
+      - name: Configure git identity
+        shell: bash
+        run: |
+          git config --global user.name "hyperi-bot"
+          git config --global user.email "bot@hyperi.io"
+
+      - name: Push to homebrew-tap
+        shell: bash
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          git clone "https://x-access-token:${GH_TOKEN}@github.com/${TAP_REPO}.git" tap
+          mkdir -p tap/Formula
+          cp staging/formula.rb "tap/Formula/${PROJECT}.rb"
+          cd tap
+          if git diff --quiet -- "Formula/${PROJECT}.rb"; then
+            echo "homebrew-tap: ${PROJECT}.rb unchanged for ${TAG}"
+          else
+            git add "Formula/${PROJECT}.rb"
+            git commit -m "${PROJECT} ${TAG#v}"
+            git push origin HEAD
+            echo "homebrew-tap: pushed ${PROJECT} ${TAG}"
+          fi
+
+      - name: Push to scoop-bucket
+        shell: bash
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          git clone "https://x-access-token:${GH_TOKEN}@github.com/${BUCKET_REPO}.git" bucket
+          mkdir -p bucket/bucket
+          cp staging/manifest.json "bucket/bucket/${PROJECT}.json"
+          cd bucket
+          if git diff --quiet -- "bucket/${PROJECT}.json"; then
+            echo "scoop-bucket: ${PROJECT}.json unchanged for ${TAG}"
+          else
+            git add "bucket/${PROJECT}.json"
+            git commit -m "${PROJECT} ${TAG#v}"
+            git push origin HEAD
+            echo "scoop-bucket: pushed ${PROJECT} ${TAG}"
+          fi
