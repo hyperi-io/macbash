@@ -1,0 +1,27 @@
+# Project:   ${PKG_NAME}
+# File:      ${PKG_WINGET_ID}.installer.yaml (rendered)
+# Purpose:   WinGet installer manifest — submitted to microsoft/winget-pkgs
+# Language:  YAML (WinGet manifest schema 1.6)
+#
+# License:   Apache-2.0
+# Copyright: (c) 2025-2026 HYPERI PTY LIMITED
+#
+# Status:    EXPERIMENTAL — Windows is not in the formal CI test path.
+
+PackageIdentifier: ${PKG_WINGET_ID}
+PackageVersion: ${PKG_VERSION}
+InstallerType: zip
+NestedInstallerType: portable
+NestedInstallerFiles:
+  - RelativeFilePath: ${PKG_BINARY}.exe
+    PortableCommandAlias: ${PKG_BINARY}
+
+Installers:
+  - Architecture: x64
+    InstallerUrl: ${PKG_DOWNLOAD_BASE}/v${PKG_VERSION}/${PKG_BINARY}-windows-amd64.zip
+    InstallerSha256: ${PKG_SHA256_WINDOWS_AMD64_ZIP}
+    Commands:
+      - ${PKG_BINARY}
+
+ManifestType: installer
+ManifestVersion: 1.6.0

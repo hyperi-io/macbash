@@ -1,0 +1,26 @@
+{
+  "version": "${PKG_VERSION}",
+  "description": "${PKG_DESCRIPTION}",
+  "homepage": "${PKG_HOMEPAGE}",
+  "license": "${PKG_LICENSE}",
+  "notes": [
+    "Windows support is EXPERIMENTAL — not in the formal CI test path."
+  ],
+  "architecture": {
+    "64bit": {
+      "url": "${PKG_DOWNLOAD_BASE}/v${PKG_VERSION}/${PKG_BINARY}-windows-amd64.zip",
+      "hash": "${PKG_SHA256_WINDOWS_AMD64_ZIP}"
+    }
+  },
+  "bin": "${PKG_BINARY}.exe",
+  "checkver": {
+    "github": "https://github.com/${PKG_GITHUB_REPO}"
+  },
+  "autoupdate": {
+    "architecture": {
+      "64bit": {
+        "url": "${PKG_DOWNLOAD_BASE}/v$version/${PKG_BINARY}-windows-amd64.zip"
+      }
+    }
+  }
+}
