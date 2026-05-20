@@ -1,0 +1,204 @@
+# Project:   macbash
+# File:      .github/workflows/package.yml
+# Purpose:   Post-release packaging — runs after binaries land in R2.
+#            Generates linux tarballs from hyperi-ci's raw binaries, builds
+#            deb/rpm via nfpm, renders homebrew/scoop/winget manifests, and
+#            uploads all artefacts to R2 under the same versioned path.
+#
+# License:   Apache-2.0
+# Copyright: (c) 2025-2026 HYPERI PTY LIMITED
+#
+# Trigger:   workflow_dispatch only — invoke manually after cross-build.yml
+#            (darwin/windows) AND the main CI publish (linux) have both
+#            uploaded their artefacts to R2 for the same tag.
+#
+# Status:    Linux + Darwin packaging is production. Windows manifests
+#            (winget/scoop) are EXPERIMENTAL — not in the formal test path.
+
+name: Package
+
+"on":
+  workflow_dispatch:
+    inputs:
+      tag:
+        type: string
+        required: true
+        description: "Tag to package (e.g. v1.5.2). cross-build + main CI must have completed for this tag."
+
+permissions:
+  contents: read
+
+env:
+  R2_ENDPOINT: https://98d20454e2af7a9397ad9366a1641659.r2.cloudflarestorage.com
+  R2_BUCKET: bin-repo
+  R2_PUBLIC: https://downloads.hyperi.io
+
+jobs:
+  linux-tarball:
+    name: Linux ${{ matrix.arch }} tarball + sha
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [amd64, arm64]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          ref: ${{ inputs.tag }}
+
+      - name: Wait for raw linux binary on R2
+        shell: bash
+        run: |
+          set -euo pipefail
+          URL="${R2_PUBLIC}/macbash/${{ inputs.tag }}/macbash-linux-${{ matrix.arch }}"
+          for i in $(seq 1 20); do
+            if curl -fsI "$URL" >/dev/null 2>&1; then exit 0; fi
+            echo "attempt $i: not yet at $URL, sleeping 15s"; sleep 15
+          done
+          echo "::error::raw linux binary never appeared at $URL"
+          exit 1
+
+      - name: Download raw binary
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          curl -fsSL "${R2_PUBLIC}/macbash/${{ inputs.tag }}/macbash-linux-${{ matrix.arch }}" \
+            -o "dist/macbash-linux-${{ matrix.arch }}"
+          chmod +x "dist/macbash-linux-${{ matrix.arch }}"
+
+      - name: Build tarball
+        shell: bash
+        run: |
+          set -euo pipefail
+          stage="dist/macbash-linux-${{ matrix.arch }}-stage"
+          mkdir -p "$stage"
+          cp "dist/macbash-linux-${{ matrix.arch }}" "$stage/macbash"
+          [ -f LICENSE ] && cp LICENSE "$stage/" || true
+          tar -czf "dist/macbash-linux-${{ matrix.arch }}.tar.gz" -C dist "$(basename "$stage")"
+          rm -rf "$stage"
+          ( cd dist && shasum -a 256 "macbash-linux-${{ matrix.arch }}" "macbash-linux-${{ matrix.arch }}.tar.gz" ) \
+            > "dist/macbash-linux-${{ matrix.arch }}.sha256"
+          ls -la dist
+
+      - name: Upload to R2
+        env:
+          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          aws configure set aws_access_key_id "$R2_ACCESS_KEY_ID"
+          aws configure set aws_secret_access_key "$R2_SECRET_ACCESS_KEY"
+          aws configure set region auto
+          for dest in "s3://${R2_BUCKET}/macbash/${{ inputs.tag }}/" "s3://${R2_BUCKET}/macbash/latest/"; do
+            aws s3 cp --endpoint-url "$R2_ENDPOINT" \
+              "dist/macbash-linux-${{ matrix.arch }}.tar.gz" "$dest"
+            aws s3 cp --endpoint-url "$R2_ENDPOINT" \
+              "dist/macbash-linux-${{ matrix.arch }}.sha256" "$dest"
+          done
+
+  deb-rpm:
+    name: nfpm deb + rpm (${{ matrix.arch }})
+    runs-on: ubuntu-latest
+    needs: linux-tarball
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [amd64, arm64]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          ref: ${{ inputs.tag }}
+
+      - name: Install nfpm
+        shell: bash
+        run: |
+          set -euo pipefail
+          NFPM_VERSION="2.41.3"
+          curl -fsSL -o /tmp/nfpm.deb \
+            "https://github.com/goreleaser/nfpm/releases/download/v${NFPM_VERSION}/nfpm_${NFPM_VERSION}_amd64.deb"
+          sudo dpkg -i /tmp/nfpm.deb
+
+      - name: Download raw binary from R2
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          curl -fsSL "${R2_PUBLIC}/macbash/${{ inputs.tag }}/macbash-linux-${{ matrix.arch }}" \
+            -o "dist/macbash-linux-${{ matrix.arch }}"
+          chmod +x "dist/macbash-linux-${{ matrix.arch }}"
+
+      - name: Render nfpm.yaml
+        shell: bash
+        env:
+          NFPM_ARCH: ${{ matrix.arch }}
+        run: |
+          set -euo pipefail
+          version="${{ inputs.tag }}"; version="${version#v}"
+          ./packaging/render-release.sh "$version" --from-r2 || true
+          # render-release outputs packaging/dist/release/nfpm.yaml; confirm
+          test -f packaging/dist/release/nfpm.yaml
+
+      - name: Build deb + rpm
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p out
+          nfpm package -f packaging/dist/release/nfpm.yaml -p deb -t out/
+          nfpm package -f packaging/dist/release/nfpm.yaml -p rpm -t out/
+          ls -la out
+          # Per-arch sha for the packages
+          ( cd out && shasum -a 256 ./* ) > "out/macbash-linux-${{ matrix.arch }}.packages.sha256"
+
+      - name: Upload to R2
+        env:
+          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          aws configure set aws_access_key_id "$R2_ACCESS_KEY_ID"
+          aws configure set aws_secret_access_key "$R2_SECRET_ACCESS_KEY"
+          aws configure set region auto
+          for dest in "s3://${R2_BUCKET}/macbash/${{ inputs.tag }}/" "s3://${R2_BUCKET}/macbash/latest/"; do
+            for f in out/*; do
+              aws s3 cp --endpoint-url "$R2_ENDPOINT" "$f" "$dest"
+            done
+          done
+
+  manifests:
+    name: Render homebrew / scoop / winget manifests
+    runs-on: ubuntu-latest
+    needs: [linux-tarball]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          ref: ${{ inputs.tag }}
+
+      - name: Render
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="${{ inputs.tag }}"; version="${version#v}"
+          ./packaging/render-release.sh "$version" --from-r2
+          find packaging/dist/release -type f | sort
+
+      - name: Upload to R2
+        env:
+          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          aws configure set aws_access_key_id "$R2_ACCESS_KEY_ID"
+          aws configure set aws_secret_access_key "$R2_SECRET_ACCESS_KEY"
+          aws configure set region auto
+          for dest in "s3://${R2_BUCKET}/macbash/${{ inputs.tag }}/manifests/" \
+                      "s3://${R2_BUCKET}/macbash/latest/manifests/"; do
+            aws s3 cp --recursive --endpoint-url "$R2_ENDPOINT" \
+              packaging/dist/release/ "$dest"
+          done
