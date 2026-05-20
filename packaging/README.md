@@ -19,7 +19,7 @@ covers it.
 
 ## What it produces
 
-Today: `install.sh` + `install.ps1`.
+Today: `install.sh`, `uninstall.sh`, `install.ps1`, `uninstall.ps1`.
 
 Both detect OS/arch, download the matching binary from the configured
 R2 download base (or any HTTP host), verify a SHA-256 checksum if
@@ -89,7 +89,9 @@ survive untouched.
 | `packaging.env` (at repo root) | Per-project config. The only file consumers edit |
 | `packaging/render.sh` | POSIX render script. Sources `packaging.env`, runs `envsubst` over each template |
 | `packaging/templates/install.sh` | POSIX curl-pipe installer template |
+| `packaging/templates/uninstall.sh` | POSIX uninstaller (locates the binary, supports `--all` PATH sweep) |
 | `packaging/templates/install.ps1` | PowerShell `irm \| iex` installer template |
+| `packaging/templates/uninstall.ps1` | PowerShell uninstaller (supports `-All` for thorough sweep) |
 | `packaging/dist/` | Rendered output (gitignored) |
 
 ## Adding a new template
