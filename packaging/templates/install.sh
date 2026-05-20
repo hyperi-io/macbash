@@ -68,7 +68,7 @@ ASSET="$BINARY-$OS-$ARCH"
 URL="$DOWNLOAD_BASE/$VERSION_PATH/$ASSET"
 SUMS_URL="$DOWNLOAD_BASE/$VERSION_PATH/checksums.sha256"
 
-TMPDIR=$(mktemp -d)
+TMPDIR=$(mktemp -d "${TMPDIR:-/tmp}/${PKG_BINARY}-install.XXXXXX")
 trap 'rm -rf "$TMPDIR"' EXIT
 
 echo "Downloading $BINARY $VERSION_PATH ($OS-$ARCH)..."
@@ -81,10 +81,12 @@ fi
 if curl -fsSL "$SUMS_URL" -o "$TMPDIR/checksums.sha256" 2>/dev/null; then
     if grep -q "$ASSET" "$TMPDIR/checksums.sha256"; then
         expected=$(grep "$ASSET" "$TMPDIR/checksums.sha256" | awk '{print $1}')
-        if command -v sha256sum >/dev/null 2>&1; then
-            actual=$(sha256sum "$TMPDIR/$BINARY" | awk '{print $1}')
-        elif command -v shasum >/dev/null 2>&1; then
+        # Portable SHA-256: shasum (macOS, BSD, Linux with perl-base) or
+        # openssl as fallback. Both available on every system we ship to.
+        if command -v shasum >/dev/null 2>&1; then
             actual=$(shasum -a 256 "$TMPDIR/$BINARY" | awk '{print $1}')
+        elif command -v openssl >/dev/null 2>&1; then
+            actual=$(openssl dgst -sha256 "$TMPDIR/$BINARY" | awk '{print $NF}')
         else
             actual=""
         fi
