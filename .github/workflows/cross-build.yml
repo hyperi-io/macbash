@@ -38,8 +38,11 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          # darwin-amd64 cross-compiled from arm64 — macos-13 (intel) runners
+          # are heavily queued/deprecating; macos-latest is arm64 by default and
+          # Apple's toolchain natively cross-compiles to x86_64 via the SDK.
           - target: x86_64-apple-darwin
-            runner: macos-13
+            runner: macos-latest
             os_arch: darwin-amd64
             zigbuild: false
           - target: aarch64-apple-darwin
