@@ -8,16 +8,23 @@
 # License:   Apache-2.0
 # Copyright: (c) 2025-2026 HYPERI PTY LIMITED
 #
-# Trigger:   workflow_dispatch only — invoke manually after cross-build.yml
-#            (darwin/windows) AND the main CI publish (linux) have both
-#            uploaded their artefacts to R2 for the same tag.
+# Trigger:   - workflow_run after Cross-build succeeds (the standard path)
+#            - workflow_dispatch with tag input (manual fallback)
 #
-# Status:    Linux + Darwin packaging is production. Windows manifests
-#            (winget/scoop) are EXPERIMENTAL — not in the formal test path.
+#            On workflow_run the tag is derived from the most recent v* tag,
+#            same pattern as cross-build.yml's resolve-tag job. The linux
+#            tarball jobs already poll R2 for the raw linux binary so a race
+#            with hyperi-ci's slow publish step is tolerated.
+#
+# Status:    Linux + Darwin packaging is production. Scoop manifest is
+#            EXPERIMENTAL — not in the formal test path.
 
 name: Package
 
 "on":
+  workflow_run:
+    workflows: [Cross-build]
+    types: [completed]
   workflow_dispatch:
     inputs:
       tag:
