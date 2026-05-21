@@ -1,3 +1,10 @@
+## [1.5.7](https://github.com/hyperi-io/macbash/compare/v1.5.6...v1.5.7) (2026-05-21)
+
+
+### Bug Fixes
+
+* package.yml resolves tag for workflow_run trigger ([e06e5c4](https://github.com/hyperi-io/macbash/commit/e06e5c4f17534d300e71441503ef642cb8c1c66e))
+
 ## [1.5.6](https://github.com/hyperi-io/macbash/compare/v1.5.5...v1.5.6) (2026-05-21)
 
 
