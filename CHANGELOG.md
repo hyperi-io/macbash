@@ -1,3 +1,10 @@
+## [1.5.6](https://github.com/hyperi-io/macbash/compare/v1.5.5...v1.5.6) (2026-05-21)
+
+
+### Bug Fixes
+
+* retrigger CI for workflow_run chain wiring ([b5c0e34](https://github.com/hyperi-io/macbash/commit/b5c0e34b582dd9a41e84e72d39cc9fda047ac5e9))
+
 ## [1.5.5](https://github.com/hyperi-io/macbash/compare/v1.5.4...v1.5.5) (2026-05-21)
 
 
