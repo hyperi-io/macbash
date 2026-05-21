@@ -2,7 +2,7 @@
 # File:      .github/workflows/package.yml
 # Purpose:   Post-release packaging — runs after binaries land in R2.
 #            Generates linux tarballs from hyperi-ci's raw binaries, builds
-#            deb/rpm via nfpm, renders homebrew/scoop/winget manifests, and
+#            deb/rpm via nfpm, renders homebrew + scoop manifests, and
 #            uploads all artefacts to R2 under the same versioned path.
 #
 # License:   Apache-2.0
@@ -41,8 +41,44 @@ env:
   R2_PUBLIC: https://downloads.hyperi.io
 
 jobs:
+  resolve-tag:
+    # workflow_run gives us no inputs — derive the tag from the latest v* tag,
+    # same pattern as cross-build.yml's resolve-tag job.
+    name: Resolve tag to package
+    runs-on: ubuntu-latest
+    if: >-
+      ${{ github.event_name == 'workflow_dispatch'
+          || github.event.workflow_run.conclusion == 'success' }}
+    outputs:
+      tag: ${{ steps.pick.outputs.tag }}
+    steps:
+      - name: Checkout (with tags)
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Pick tag
+        id: pick
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "${{ inputs.tag }}" ]; then
+            tag="${{ inputs.tag }}"
+          else
+            git fetch --tags --force origin
+            tag=$(git tag --sort=-creatordate --list 'v*' | head -1)
+          fi
+          if [ -z "$tag" ]; then
+            echo "::error::no tag to package"
+            exit 1
+          fi
+          echo "Resolved tag: $tag"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+
   linux-tarball:
     name: Linux ${{ matrix.arch }} tarball + sha
+    needs: resolve-tag
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -56,7 +92,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          URL="${R2_PUBLIC}/macbash/${{ inputs.tag }}/macbash-linux-${{ matrix.arch }}"
+          URL="${R2_PUBLIC}/macbash/${{ needs.resolve-tag.outputs.tag }}/macbash-linux-${{ matrix.arch }}"
           for i in $(seq 1 20); do
             if curl -fsI "$URL" >/dev/null 2>&1; then exit 0; fi
             echo "attempt $i: not yet at $URL, sleeping 15s"; sleep 15
@@ -69,7 +105,7 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p dist
-          curl -fsSL "${R2_PUBLIC}/macbash/${{ inputs.tag }}/macbash-linux-${{ matrix.arch }}" \
+          curl -fsSL "${R2_PUBLIC}/macbash/${{ needs.resolve-tag.outputs.tag }}/macbash-linux-${{ matrix.arch }}" \
             -o "dist/macbash-linux-${{ matrix.arch }}"
           chmod +x "dist/macbash-linux-${{ matrix.arch }}"
 
@@ -97,7 +133,7 @@ jobs:
           aws configure set aws_access_key_id "$R2_ACCESS_KEY_ID"
           aws configure set aws_secret_access_key "$R2_SECRET_ACCESS_KEY"
           aws configure set region auto
-          for dest in "s3://${R2_BUCKET}/macbash/${{ inputs.tag }}/" "s3://${R2_BUCKET}/macbash/latest/"; do
+          for dest in "s3://${R2_BUCKET}/macbash/${{ needs.resolve-tag.outputs.tag }}/" "s3://${R2_BUCKET}/macbash/latest/"; do
             aws s3 cp --endpoint-url "$R2_ENDPOINT" \
               "dist/macbash-linux-${{ matrix.arch }}.tar.gz" "$dest"
             aws s3 cp --endpoint-url "$R2_ENDPOINT" \
@@ -107,7 +143,7 @@ jobs:
   deb-rpm:
     name: nfpm deb + rpm (${{ matrix.arch }})
     runs-on: ubuntu-latest
-    needs: linux-tarball
+    needs: [resolve-tag, linux-tarball]
     strategy:
       fail-fast: false
       matrix:
@@ -130,7 +166,7 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p dist
-          curl -fsSL "${R2_PUBLIC}/macbash/${{ inputs.tag }}/macbash-linux-${{ matrix.arch }}" \
+          curl -fsSL "${R2_PUBLIC}/macbash/${{ needs.resolve-tag.outputs.tag }}/macbash-linux-${{ matrix.arch }}" \
             -o "dist/macbash-linux-${{ matrix.arch }}"
           chmod +x "dist/macbash-linux-${{ matrix.arch }}"
 
@@ -140,7 +176,7 @@ jobs:
           NFPM_ARCH: ${{ matrix.arch }}
         run: |
           set -euo pipefail
-          version="${{ inputs.tag }}"; version="${version#v}"
+          version="${{ needs.resolve-tag.outputs.tag }}"; version="${version#v}"
           ./packaging/render-release.sh "$version" --from-r2 || true
           # render-release outputs packaging/dist/release/nfpm.yaml; confirm
           test -f packaging/dist/release/nfpm.yaml
@@ -166,7 +202,7 @@ jobs:
           aws configure set aws_access_key_id "$R2_ACCESS_KEY_ID"
           aws configure set aws_secret_access_key "$R2_SECRET_ACCESS_KEY"
           aws configure set region auto
-          for dest in "s3://${R2_BUCKET}/macbash/${{ inputs.tag }}/" "s3://${R2_BUCKET}/macbash/latest/"; do
+          for dest in "s3://${R2_BUCKET}/macbash/${{ needs.resolve-tag.outputs.tag }}/" "s3://${R2_BUCKET}/macbash/latest/"; do
             for f in out/*; do
               aws s3 cp --endpoint-url "$R2_ENDPOINT" "$f" "$dest"
             done
@@ -175,7 +211,7 @@ jobs:
   manifests:
     name: Render homebrew + scoop manifests + static install scripts
     runs-on: ubuntu-latest
-    needs: [linux-tarball]
+    needs: [resolve-tag, linux-tarball]
     steps:
       - name: Checkout (default branch — packaging code lives here, not in the tagged source)
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
@@ -191,7 +227,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          version="${{ inputs.tag }}"; version="${version#v}"
+          version="${{ needs.resolve-tag.outputs.tag }}"; version="${version#v}"
           ./packaging/render-release.sh "$version" --from-r2
           find packaging/dist/release -type f | sort
 
@@ -207,7 +243,7 @@ jobs:
           aws configure set region auto
 
           # Per-version manifests under /<tag>/manifests/ + /latest/manifests/
-          for dest in "s3://${R2_BUCKET}/macbash/${{ inputs.tag }}/manifests/" \
+          for dest in "s3://${R2_BUCKET}/macbash/${{ needs.resolve-tag.outputs.tag }}/manifests/" \
                       "s3://${R2_BUCKET}/macbash/latest/manifests/"; do
             aws s3 cp --recursive --endpoint-url "$R2_ENDPOINT" \
               packaging/dist/release/ "$dest"
@@ -219,7 +255,7 @@ jobs:
           # of the script that downloaded the same-version binary.
           for f in install.sh install.ps1 uninstall.sh uninstall.ps1; do
             for dest in "s3://${R2_BUCKET}/macbash/$f" \
-                        "s3://${R2_BUCKET}/macbash/${{ inputs.tag }}/$f"; do
+                        "s3://${R2_BUCKET}/macbash/${{ needs.resolve-tag.outputs.tag }}/$f"; do
               # Use text/plain content-type so curl/iex render in browser too.
               ct="text/x-shellscript"
               case "$f" in *.ps1) ct="text/plain" ;; esac
@@ -232,7 +268,7 @@ jobs:
   publish-tap-bucket:
     name: Push formula + scoop manifest to tap / bucket repos
     runs-on: ubuntu-latest
-    needs: [manifests]
+    needs: [resolve-tag, manifests]
     env:
       PROJECT: macbash
       TAP_REPO: hyperi-io/homebrew-tap
@@ -254,9 +290,9 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p staging
-          curl -fsSL "${R2_PUBLIC}/macbash/${{ inputs.tag }}/manifests/homebrew/${PROJECT}.rb" \
+          curl -fsSL "${R2_PUBLIC}/macbash/${{ needs.resolve-tag.outputs.tag }}/manifests/homebrew/${PROJECT}.rb" \
             -o staging/formula.rb
-          curl -fsSL "${R2_PUBLIC}/macbash/${{ inputs.tag }}/manifests/scoop/${PROJECT}.json" \
+          curl -fsSL "${R2_PUBLIC}/macbash/${{ needs.resolve-tag.outputs.tag }}/manifests/scoop/${PROJECT}.json" \
             -o staging/manifest.json
 
       - name: Configure git identity
@@ -269,7 +305,7 @@ jobs:
         shell: bash
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
-          TAG: ${{ inputs.tag }}
+          TAG: ${{ needs.resolve-tag.outputs.tag }}
         run: |
           set -euo pipefail
           git clone "https://x-access-token:${GH_TOKEN}@github.com/${TAP_REPO}.git" tap
@@ -289,7 +325,7 @@ jobs:
         shell: bash
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
-          TAG: ${{ inputs.tag }}
+          TAG: ${{ needs.resolve-tag.outputs.tag }}
         run: |
           set -euo pipefail
           git clone "https://x-access-token:${GH_TOKEN}@github.com/${BUCKET_REPO}.git" bucket
