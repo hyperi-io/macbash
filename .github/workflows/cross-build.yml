@@ -6,10 +6,13 @@
 # License:   Apache-2.0
 # Copyright: (c) 2025-2026 HYPERI PTY LIMITED
 #
-# Trigger:   - on tag push (vX.Y.Z) → builds the tag's source
-#            - workflow_dispatch with `tag` input → retroactive build for an
-#              existing tag (use when hyperi-ci already created the tag and you
-#              want to add cross-platform binaries to the same R2 version dir).
+# Trigger:   - workflow_run after CI succeeds (most common path — fires when
+#              hyperi-ci's publish step tags vX.Y.Z; the [skip ci] suffix on
+#              the chore commit blocks the tag-push trigger so we use the
+#              ci-completion event instead).
+#            - on tag push (vX.Y.Z) → fallback for tags pushed without the
+#              [skip ci] suffix (manual tagging, foreign release tools, etc.).
+#            - workflow_dispatch with `tag` input → retroactive / out-of-band.
 #
 # Status:    Windows builds are EXPERIMENTAL — best effort, not in the formal
 #            test path (see packaging/README.md).
@@ -20,6 +23,9 @@ name: Cross-build
   push:
     tags:
       - "v*"
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
   workflow_dispatch:
     inputs:
       tag:
@@ -31,8 +37,61 @@ permissions:
   contents: read
 
 jobs:
+  resolve-tag:
+    # workflow_run gives us no inputs and `github.ref_name` resolves to the
+    # default branch, so derive the tag explicitly. Skips when CI failed or
+    # when CI didn't produce a new tag (non-publish run).
+    name: Resolve tag to build
+    runs-on: ubuntu-latest
+    if: >-
+      ${{ github.event_name == 'workflow_dispatch'
+          || github.event_name == 'push'
+          || github.event.workflow_run.conclusion == 'success' }}
+    outputs:
+      tag: ${{ steps.pick.outputs.tag }}
+    steps:
+      - name: Checkout (with tags)
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Pick tag
+        id: pick
+        shell: bash
+        run: |
+          set -euo pipefail
+          case "${{ github.event_name }}" in
+            workflow_dispatch)
+              tag="${{ inputs.tag }}"
+              ;;
+            push)
+              tag="${{ github.ref_name }}"
+              ;;
+            workflow_run)
+              # CI completed successfully. Pick the most recent v-tag — if
+              # CI was a publish run it will have created vX.Y.Z; if it was a
+              # validate-only run the latest tag is unchanged and rebuilding
+              # is idempotent (same source → same bytes overwrite the same R2
+              # paths).
+              git fetch --tags --force origin
+              tag=$(git tag --sort=-creatordate --list 'v*' | head -1)
+              if [ -z "$tag" ]; then
+                echo "::notice::no v-tag found — nothing to cross-build"
+                echo "tag=" >> "$GITHUB_OUTPUT"
+                exit 0
+              fi
+              ;;
+          esac
+          echo "Resolved tag: $tag"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+        env:
+          GH_TOKEN: ${{ github.token }}
+
   build:
     name: ${{ matrix.os_arch }}
+    needs: resolve-tag
+    if: ${{ needs.resolve-tag.outputs.tag != '' }}
     runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
@@ -59,14 +118,14 @@ jobs:
       - name: Checkout
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
-          ref: ${{ inputs.tag || github.ref_name }}
+          ref: ${{ needs.resolve-tag.outputs.tag }}
 
       - name: Derive version from tag
         id: ver
         shell: bash
         run: |
           set -euo pipefail
-          tag="${{ inputs.tag || github.ref_name }}"
+          tag="${{ needs.resolve-tag.outputs.tag }}"
           version="${tag#v}"
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
           echo "version=$version" >> "$GITHUB_OUTPUT"
