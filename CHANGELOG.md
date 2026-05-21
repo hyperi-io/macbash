@@ -1,3 +1,10 @@
+## [1.5.8](https://github.com/hyperi-io/macbash/compare/v1.5.7...v1.5.8) (2026-05-21)
+
+
+### Bug Fixes
+
+* bundle README into v1.5.8 release ([0075ccc](https://github.com/hyperi-io/macbash/commit/0075cccef1e52c2520f8c7dfe9ec73fa14bd0d21))
+
 ## [1.5.7](https://github.com/hyperi-io/macbash/compare/v1.5.6...v1.5.7) (2026-05-21)
 
 
