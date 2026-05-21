@@ -1,3 +1,11 @@
+## [1.5.4](https://github.com/hyperi-io/macbash/compare/v1.5.3...v1.5.4) (2026-05-21)
+
+
+### Bug Fixes
+
+* keep Cargo.lock in sync with Cargo.toml on every release ([e457bf5](https://github.com/hyperi-io/macbash/commit/e457bf596781724b789879914f8e4a19b42897bf))
+* retrigger release for cargo.lock sync ([6c3a1e9](https://github.com/hyperi-io/macbash/commit/6c3a1e91805c5fb318f7e901da781f23c658cd0d))
+
 ## [1.5.3](https://github.com/hyperi-io/macbash/compare/v1.5.2...v1.5.3) (2026-05-20)
 
 
