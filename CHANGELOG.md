@@ -1,3 +1,10 @@
+## [1.5.5](https://github.com/hyperi-io/macbash/compare/v1.5.4...v1.5.5) (2026-05-21)
+
+
+### Bug Fixes
+
+* package.yml now uploads static install scripts to R2 ([1ded08d](https://github.com/hyperi-io/macbash/commit/1ded08d073de4d1113adee8fd28204f3ef3dda98))
+
 ## [1.5.4](https://github.com/hyperi-io/macbash/compare/v1.5.3...v1.5.4) (2026-05-21)
 
 
