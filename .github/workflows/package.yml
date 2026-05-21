@@ -166,14 +166,21 @@ jobs:
           done
 
   manifests:
-    name: Render homebrew + scoop manifests
+    name: Render homebrew + scoop manifests + static install scripts
     runs-on: ubuntu-latest
     needs: [linux-tarball]
     steps:
       - name: Checkout (default branch — packaging code lives here, not in the tagged source)
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
-      - name: Render
+      - name: Render static install scripts
+        shell: bash
+        run: |
+          set -euo pipefail
+          ./packaging/render.sh
+          ls -la packaging/dist
+
+      - name: Render per-version manifests
         shell: bash
         run: |
           set -euo pipefail
@@ -181,7 +188,7 @@ jobs:
           ./packaging/render-release.sh "$version" --from-r2
           find packaging/dist/release -type f | sort
 
-      - name: Upload to R2
+      - name: Upload manifests + install scripts to R2
         env:
           R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
           R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
@@ -191,10 +198,28 @@ jobs:
           aws configure set aws_access_key_id "$R2_ACCESS_KEY_ID"
           aws configure set aws_secret_access_key "$R2_SECRET_ACCESS_KEY"
           aws configure set region auto
+
+          # Per-version manifests under /<tag>/manifests/ + /latest/manifests/
           for dest in "s3://${R2_BUCKET}/macbash/${{ inputs.tag }}/manifests/" \
                       "s3://${R2_BUCKET}/macbash/latest/manifests/"; do
             aws s3 cp --recursive --endpoint-url "$R2_ENDPOINT" \
               packaging/dist/release/ "$dest"
+          done
+
+          # Static install scripts at /macbash/install.sh (curl-pipe target).
+          # Also mirror to per-version path for reproducibility — pinning a
+          # tag-specific install.sh URL lets users install a known-good copy
+          # of the script that downloaded the same-version binary.
+          for f in install.sh install.ps1 uninstall.sh uninstall.ps1; do
+            for dest in "s3://${R2_BUCKET}/macbash/$f" \
+                        "s3://${R2_BUCKET}/macbash/${{ inputs.tag }}/$f"; do
+              # Use text/plain content-type so curl/iex render in browser too.
+              ct="text/x-shellscript"
+              case "$f" in *.ps1) ct="text/plain" ;; esac
+              aws s3 cp --endpoint-url "$R2_ENDPOINT" \
+                --content-type "$ct" \
+                "packaging/dist/$f" "$dest"
+            done
           done
 
   publish-tap-bucket:
