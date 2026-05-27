@@ -23,7 +23,10 @@ fn main() {
         .duration_since(UNIX_EPOCH)
         .map(|d| d.as_secs())
         .unwrap_or(0);
-    println!("cargo:rustc-env=VERGEN_BUILD_TIMESTAMP={}", rfc3339_utc(secs));
+    println!(
+        "cargo:rustc-env=VERGEN_BUILD_TIMESTAMP={}",
+        rfc3339_utc(secs)
+    );
 
     println!("cargo:rerun-if-changed=.git/HEAD");
     println!("cargo:rerun-if-changed=.git/refs");
