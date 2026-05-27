@@ -61,10 +61,14 @@ jobs:
       - name: Pick tag
         id: pick
         shell: bash
+        # Indirect via env: to keep untrusted github-context out of run:; semgrep
+        # run-shell-injection.
+        env:
+          INPUT_TAG: ${{ inputs.tag }}
         run: |
           set -euo pipefail
-          if [ -n "${{ inputs.tag }}" ]; then
-            tag="${{ inputs.tag }}"
+          if [ -n "$INPUT_TAG" ]; then
+            tag="$INPUT_TAG"
           else
             git fetch --tags --force origin
             tag=$(git tag --sort=-creatordate --list 'v*' | head -1)
