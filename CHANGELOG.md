@@ -1,3 +1,11 @@
+## [1.5.9](https://github.com/hyperi-io/macbash/compare/v1.5.8...v1.5.9) (2026-05-27)
+
+
+### Bug Fixes
+
+* **ci:** silence semgrep shell-injection + ifs-tampering on quality gate ([98726ed](https://github.com/hyperi-io/macbash/commit/98726ed109580a412934dc201a199a2f5f31a86a)), closes [#5](https://github.com/hyperi-io/macbash/issues/5)
+* **deps:** drop vergen-gix; fixes 7 GHSA in gix family ([4319f45](https://github.com/hyperi-io/macbash/commit/4319f4574cb3cba25afa1193d672319870735eed))
+
 ## [1.5.8](https://github.com/hyperi-io/macbash/compare/v1.5.7...v1.5.8) (2026-05-21)
 
 
