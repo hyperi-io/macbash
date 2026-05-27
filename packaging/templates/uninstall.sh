@@ -91,15 +91,16 @@ case "$MODE" in
         ;;
     all)
         any=0
-        # First, drain everything from PATH
-        # shellcheck disable=SC2046  # we want word-splitting on PATH
-        IFS=:; for d in $PATH; do
+        # First, drain everything from PATH. Use `tr` to split on ':' rather
+        # than mutating IFS globally; semgrep ifs-tampering.
+        while IFS= read -r d; do
             [ -n "$d" ] || continue
             if [ -e "$d/$BINARY" ] || [ -L "$d/$BINARY" ]; then
                 remove_one "$d/$BINARY" && any=1
             fi
-        done
-        unset IFS
+        done <<EOF
+$(printf '%s\n' "$PATH" | tr ':' '\n')
+EOF
         # Then sweep the candidate dirs that may not be on PATH.
         # Use `for` (no pipe) so $any survives — pipe creates a subshell.
         for path in $(candidates); do
