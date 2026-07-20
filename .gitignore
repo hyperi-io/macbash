@@ -4,7 +4,13 @@
 /coverage
 **/*.rs.bk
 Cargo.lock.bak
-docs/superpowers/
 .env
 !packaging.env
 /packaging/dist/
+
+# Agent tooling is local-only and never committed. Also listed in
+# .git/info/exclude, but that file only governs UNTRACKED paths -- which is
+# exactly how CLAUDE.md stayed committed after it was first added.
+/CLAUDE.md
+/.claude/
+/.hyperi-ai
