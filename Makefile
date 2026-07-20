@@ -1,8 +1,8 @@
-# Project:   machbash-rust
+# Project:   macbash
 # File:      Makefile
 # Purpose:   CI targets wrapping hyperi-ci
 #
-# License:   Apache-2.0 — HYPERI PTY LIMITED
+# License:   Apache-2.0
 # Copyright: (c) 2026 HYPERI PTY LIMITED
 
 .PHONY: quality test build check

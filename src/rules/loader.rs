@@ -19,15 +19,18 @@ use super::types::{Rule, RuleSet};
 #[folder = "src/rules/builtin/"]
 struct BuiltinRules;
 
+// Display strings deliberately omit `{source}`: the field is already tagged
+// `#[source]`, so anyhow's `{:#}` walks the chain and appends it. Naming it
+// in both places prints the OS error twice.
 #[derive(Debug, Error)]
 pub enum LoadError {
-    #[error("reading rules file {path}: {source}")]
+    #[error("reading rules file {path}")]
     Read {
         path: String,
         #[source]
         source: std::io::Error,
     },
-    #[error("parsing YAML from {source_name}: {source}")]
+    #[error("parsing YAML from {source_name}")]
     Parse {
         source_name: String,
         #[source]

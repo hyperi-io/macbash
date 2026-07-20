@@ -9,33 +9,33 @@ the rendered files.
 
 | Platform | Status |
 |---|---|
-| Linux (amd64, arm64) | Supported — built and tested in CI |
+| Linux (amd64, arm64) | Supported - built and tested in CI |
 | macOS (amd64, arm64) | Templates ready; binary builds pending hyperi-ci darwin support |
-| **Windows (amd64)** | **EXPERIMENTAL — best effort.** Not in the formal CI test path. install.ps1 template ships, but Windows binaries are not yet produced by hyperi-ci. Planned phase 2 via `cargo-zigbuild` cross-compilation |
+| **Windows (amd64)** | **EXPERIMENTAL - best effort.** Not in the formal CI test path. install.ps1 template ships, but Windows binaries are not yet produced by hyperi-ci. Planned phase 2 via `cargo-zigbuild` cross-compilation |
 
 The Windows channel is provided so consumers can iterate, but it has
-no CI gate behind it — expect rough edges until the formal test path
+no CI gate behind it - expect rough edges until the formal test path
 covers it.
 
 ## What it produces
 
 Static templates (rendered once by `render.sh`, served as-is to users):
 
-- `install.sh`, `uninstall.sh` — POSIX curl-pipe install/uninstall
-- `install.ps1`, `uninstall.ps1` — Windows PowerShell equivalents
+- `install.sh`, `uninstall.sh` - POSIX curl-pipe install/uninstall
+- `install.ps1`, `uninstall.ps1` - Windows PowerShell equivalents
 
 Per-version release templates (rendered by `render-release.sh <version>`,
 re-rendered each release to bake in version + per-arch SHA256 values):
 
-- `homebrew/<binary>.rb` — formula for the project's Homebrew tap
-- `nfpm.yaml` — config for nfpm to build `.deb` and `.rpm` packages
-- `scoop/<binary>.json` — Scoop manifest
+- `homebrew/<binary>.rb` - formula for the project's Homebrew tap
+- `nfpm.yaml` - config for nfpm to build `.deb` and `.rpm` packages
+- `scoop/<binary>.json` - Scoop manifest
 
 The packaging framework also assumes two distribution channels live in
 sibling repos on the same org:
 
-- `<org>/homebrew-tap` — `brew tap <org>/tap && brew install <binary>`
-- `<org>/scoop-bucket` — `scoop bucket add <org> https://github.com/<org>/scoop-bucket && scoop install <binary>`
+- `<org>/homebrew-tap` - `brew tap <org>/tap && brew install <binary>`
+- `<org>/scoop-bucket` - `scoop bucket add <org> https://github.com/<org>/scoop-bucket && scoop install <binary>`
 
 These are populated per release by copying the rendered manifests in.
 

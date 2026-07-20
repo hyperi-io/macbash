@@ -16,11 +16,14 @@ use crate::fixer::can_transform_grep_p;
 use crate::rules::{FixType, MatchHit, RuleSet, Severity};
 use crate::scanner::group_by_file;
 
+// Display strings omit the wrapped error -- `#[from]` already makes it the
+// `#[source]`, so anyhow's `{:#}` appends it. See LoadError in
+// src/rules/loader.rs.
 #[derive(Debug, Error)]
 pub enum OutputError {
-    #[error("writing output: {0}")]
+    #[error("writing output")]
     Io(#[from] std::io::Error),
-    #[error("serialising json: {0}")]
+    #[error("serialising json")]
     Json(#[from] serde_json::Error),
 }
 

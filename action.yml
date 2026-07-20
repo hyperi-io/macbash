@@ -1,0 +1,121 @@
+# Project:   macbash
+# File:      action.yml
+# Purpose:   GitHub Action to check bash scripts for macOS compatibility
+# Language:  YAML (GitHub Actions)
+#
+# License:   Apache-2.0
+# Copyright: (c) 2025-2026 HYPERI PTY LIMITED
+
+name: 'macbash'
+description: 'Check bash scripts for macOS compatibility and auto-fix them for cross-platform portability'
+author: 'HYPERI PTY LIMITED'
+
+branding:
+  icon: 'terminal'
+  color: 'blue'
+
+inputs:
+  version:
+    description: 'macbash version to install, e.g. v1.5.9 (default: latest)'
+    required: false
+    default: 'latest'
+  paths:
+    description: 'Files or glob patterns to check (space-separated)'
+    required: false
+    default: '**/*.sh'
+  severity:
+    description: 'Minimum severity to report: error, warning, info'
+    required: false
+    default: 'warning'
+  format:
+    description: 'Output format: text, json'
+    required: false
+    default: 'text'
+  config:
+    description: 'Path to a custom rules YAML file, merged over the built-ins'
+    required: false
+    default: ''
+  fail-on-no-match:
+    description: 'Fail the step when `paths` matches no files (catches a typo silently passing the gate)'
+    required: false
+    default: 'true'
+
+runs:
+  using: 'composite'
+  steps:
+    # Linux and macOS runners only. install.sh publishes linux/darwin
+    # binaries; Windows consumers use the Scoop bucket instead.
+    - name: Install macbash
+      shell: bash
+      env:
+        MACBASH_VERSION: ${{ inputs.version }}
+      run: |
+        set -euo pipefail
+        case "${RUNNER_OS:-}" in
+            Windows)
+                echo "::error::macbash's Action supports Linux and macOS runners. On Windows, install from the Scoop bucket: scoop bucket add hyperi https://github.com/hyperi-io/scoop-bucket && scoop install macbash"
+                exit 1
+                ;;
+        esac
+        curl -fsSL https://downloads.hyperi.io/macbash/install.sh \
+            | sh -s -- --user --version "$MACBASH_VERSION"
+        echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+        "$HOME/.local/bin/macbash" --version
+
+    - name: Run macbash
+      shell: bash
+      env:
+        # Inputs go through the environment, never interpolated into the
+        # script body -- ${{ }} inside `run` is a shell-injection vector.
+        MACBASH_PATHS: ${{ inputs.paths }}
+        MACBASH_SEVERITY: ${{ inputs.severity }}
+        MACBASH_FORMAT: ${{ inputs.format }}
+        MACBASH_CONFIG: ${{ inputs.config }}
+        MACBASH_FAIL_ON_NO_MATCH: ${{ inputs.fail-on-no-match }}
+      run: |
+        set -euo pipefail
+        # nullglob makes a no-match expand to nothing rather than to the
+        # literal pattern. globstar is NOT assumed: it needs bash 4, and
+        # macOS ships bash 3.2 -- which is this project's entire reason to
+        # exist, so the Action must not require what it warns about. `**`
+        # patterns are expanded with find instead.
+        shopt -s nullglob
+
+        files=()
+        for pattern in $MACBASH_PATHS; do
+            case "$pattern" in
+                *'**'*)
+                    root=${pattern%%/**}
+                    [ "$root" = "$pattern" ] && root=.
+                    while IFS= read -r found; do
+                        files+=("$found")
+                    done < <(find "$root" -type f -name "${pattern##*/}")
+                    ;;
+                *)
+                    # Deliberate glob expansion of a single pattern.
+                    # shellcheck disable=SC2206
+                    for match in $pattern; do
+                        files+=("$match")
+                    done
+                    ;;
+            esac
+        done
+
+        if [ ${#files[@]} -eq 0 ]; then
+            if [ "$MACBASH_FAIL_ON_NO_MATCH" = "true" ]; then
+                echo "::error::macbash: no files matched '$MACBASH_PATHS'. Check the paths input, or set fail-on-no-match: false if an empty match is expected."
+                exit 1
+            fi
+            echo "::warning::macbash: no files matched '$MACBASH_PATHS' -- nothing was checked."
+            exit 0
+        fi
+
+        args=(--severity "$MACBASH_SEVERITY" --format "$MACBASH_FORMAT")
+        if [ -n "$MACBASH_CONFIG" ]; then
+            args+=(--config "$MACBASH_CONFIG")
+        fi
+
+        # `--` terminates option parsing: without it a repo file named
+        # e.g. `-o.sh` (which `**/*.sh` will happily match) is read as a
+        # flag, silently turning this check into a fix run.
+        macbash "${args[@]}" -- "${files[@]}"

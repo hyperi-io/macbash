@@ -3,9 +3,10 @@ yanked = "deny"
 ignore = []
 
 [licenses]
-# Zlib: pulled in by vergen-gix -> gix -> {foldhash, zlib-rs}. OSI-approved
-# permissive licence, same family as MIT/ISC; no copyleft.
-allow = ["Apache-2.0", "MIT", "BSD-3-Clause", "BSD-2-Clause", "ISC", "Unicode-3.0", "CC0-1.0", "Zlib"]
+# Permissive, no copyleft. Zlib was dropped along with vergen-gix (which
+# pulled it in via gix -> zlib-rs); nothing in the tree carries it now.
+# BSD-2/BSD-3/ISC/CC0 are standing policy allowances, not currently matched.
+allow = ["Apache-2.0", "MIT", "BSD-3-Clause", "BSD-2-Clause", "ISC", "Unicode-3.0", "CC0-1.0"]
 confidence-threshold = 0.93
 
 [bans]

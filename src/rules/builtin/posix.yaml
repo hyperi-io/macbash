@@ -1,5 +1,5 @@
 # Project:   macbash
-# File:      internal/rules/builtin/posix.yaml
+# File:      src/rules/builtin/posix.yaml
 # Purpose:   Rules for detecting bashisms in /bin/sh scripts
 # Language:  YAML
 #
@@ -118,10 +118,13 @@ rules:
     description: |
       'source' is a bash builtin. POSIX sh uses '.' (dot) to source files.
     severity: error
-    pattern: '^\s*source\s+'
+    # Capture the indentation and put it back: the pattern consumes it, so a
+    # bare '. ' template moved every sourced line to column 1 and wrecked the
+    # diff of any indented script.
+    pattern: '^(\s*)source\s+'
     shebang_match: '^#!/bin/sh'
     fix_type: replace
-    fix_template: '. '
+    fix_template: '${1}. '
     examples:
       bad: 'source ./config.sh'
       good: '. ./config.sh'

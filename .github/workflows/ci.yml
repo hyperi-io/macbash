@@ -1,8 +1,8 @@
-# Project:   machbash-rust
+# Project:   macbash
 # File:      .github/workflows/ci.yml
 # Purpose:   CI pipeline
 #
-# License:   Apache-2.0 — HYPERI PTY LIMITED
+# License:   Apache-2.0
 # Copyright: (c) 2026 HYPERI PTY LIMITED
 
 name: CI
@@ -21,6 +21,22 @@ name: CI
 
 jobs:
   ci:
+    # The repository default is write-on-everything, and a called workflow is
+    # CAPPED by the caller's grant -- so without this block every job in
+    # rust-ci.yml runs with a token that can write actions, deployments,
+    # checks and security-events it never touches (code-scanning alert
+    # actions/missing-workflow-permissions).
+    #
+    # This is the union rust-ci.yml actually asks for: contents:write for
+    # plan's semantic-release push-access dry-run, and contents/packages/
+    # issues/pull-requests write passed down to _release-tail.yml's
+    # tag-and-publish job. Its own per-job blocks still cap further down --
+    # quality, test and build declare contents:read.
+    permissions:
+      contents: write
+      packages: write
+      issues: write
+      pull-requests: write
     uses: hyperi-io/hyperi-ci/.github/workflows/rust-ci.yml@main
     with:
       tag: ${{ inputs.tag || '' }}

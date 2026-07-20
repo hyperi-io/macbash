@@ -1,0 +1,25 @@
+# Project:   macbash
+# File:      .gitleaks.toml
+# Purpose:   Project-specific gitleaks configuration
+#
+# License:   Apache-2.0
+# Copyright: (c) 2025-2026 HYPERI PTY LIMITED
+#
+# hyperi-ci's quality gate runs gitleaks against this file when it exists.
+# `useDefault = true` keeps the full upstream ruleset -- without a rule
+# source, gitleaks scans every byte, matches nothing, and reports success,
+# which is the worst failure mode a secret scanner has.
+#
+# Documentation: https://github.com/gitleaks/gitleaks#configuration
+
+[extend]
+useDefault = true
+
+# No project allowlist. gitleaks REJECTS an [allowlist] block that declares
+# no commits/paths/regexes/stopwords ("must contain at least one check"), so
+# an empty placeholder block fails the whole config load rather than doing
+# nothing. Add the block back only with a real entry, e.g.:
+#
+#   [[allowlists]]
+#   description = "fake credentials in test fixtures"
+#   paths = ['''tests/fixtures/.*''']

@@ -2,7 +2,7 @@
 //  File:      src/fixer.rs
 //  Purpose:   Apply Replace + Transform fixes; bash -n post-validation hook
 //  Language:  Rust
-//  Status:    EXPERIMENTAL — fix transforms (-w / -o) have not been validated
+//  Status:    EXPERIMENTAL - fix transforms (-w / -o) have not been validated
 //             at scale. Output may be incorrect on edge cases. Always diff
 //             before committing rewritten scripts.
 //
@@ -20,9 +20,11 @@ use thiserror::Error;
 
 use crate::rules::{FixType, MatchHit, Rule, RuleSet};
 
+// Display string omits `{source}` on purpose -- see the note on LoadError in
+// src/rules/loader.rs.
 #[derive(Debug, Error)]
 pub enum FixError {
-    #[error("reading {path}: {source}")]
+    #[error("reading {path}")]
     Read {
         path: String,
         #[source]
@@ -35,9 +37,10 @@ pub struct FixOutcome {
     pub content: String,
     pub fixed_count: usize,
     pub unfixed_count: usize,
+    /// Per-fix detail for library consumers that want to render a change
+    /// report. The CLI does not read it -- `-w` prints counts and `--dry-run`
+    /// prints the whole rewritten file.
     pub fixes: Vec<AppliedFix>,
-    /// Set by the caller after running `bash -n` validation.
-    pub validation_err: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -223,20 +226,42 @@ fn transform_grep_p_to_e(line: &str) -> (String, bool) {
     (new, changed)
 }
 
+/// Translate the PCRE shorthand classes to their ERE equivalents.
+///
+/// This walks the pattern rather than running a sequence of `str::replace`,
+/// because a blind replace cannot see escaping: in `\\d+` the backslash is
+/// itself escaped, so the `d` is a literal `d` -- but `replace(r"\d", ...)`
+/// matched the second backslash and turned it into `\[0-9]+`, silently
+/// changing what the pattern means. The result is still valid bash, so
+/// `validate_bash_syntax` cannot catch it.
 fn pcre_to_ere(pattern: &str) -> String {
-    const REPL: &[(&str, &str)] = &[
-        (r"\d", "[0-9]"),
-        (r"\D", "[^0-9]"),
-        (r"\w", "[[:alnum:]_]"),
-        (r"\W", "[^[:alnum:]_]"),
-        (r"\s", "[[:space:]]"),
-        (r"\S", "[^[:space:]]"),
-    ];
-    let mut s = pattern.to_string();
-    for (pcre, ere) in REPL {
-        s = s.replace(pcre, ere);
+    let mut out = String::with_capacity(pattern.len());
+    let mut chars = pattern.chars();
+    while let Some(ch) = chars.next() {
+        if ch != '\\' {
+            out.push(ch);
+            continue;
+        }
+        let Some(escaped) = chars.next() else {
+            out.push('\\');
+            break;
+        };
+        match escaped {
+            'd' => out.push_str("[0-9]"),
+            'D' => out.push_str("[^0-9]"),
+            'w' => out.push_str("[[:alnum:]_]"),
+            'W' => out.push_str("[^[:alnum:]_]"),
+            's' => out.push_str("[[:space:]]"),
+            'S' => out.push_str("[^[:space:]]"),
+            // Everything else -- crucially a second backslash -- passes
+            // through as the two characters it already was.
+            other => {
+                out.push('\\');
+                out.push(other);
+            }
+        }
     }
-    s
+    out
 }
 
 /// Run `bash -n` against `content` as a post-fix syntax sanity check.
@@ -275,6 +300,7 @@ mod tests {
     use super::*;
     use crate::rules::load_builtin;
     use crate::scanner::Scanner;
+    use crate::testutil::synthesise_script;
 
     fn run_fix(input: &str) -> FixOutcome {
         let rs = load_builtin().unwrap();
@@ -284,11 +310,38 @@ mod tests {
         f.fix_text(input, &ms)
     }
 
+    /// `xargs -r` is reported but deliberately NOT rewritten -- dropping the
+    /// flag is correct for BSD and a behaviour change on GNU, so there is no
+    /// safe automatic answer. It also used to corrupt flag clusters
+    /// (`xargs -rn1` -> `xargsn1`).
     #[test]
-    fn replaces_xargs_minus_r() {
-        let out = run_fix("find . | xargs -r rm\n");
-        assert!(out.content.contains("xargs rm"), "got: {:?}", out.content);
-        assert!(out.fixed_count >= 1);
+    fn xargs_minus_r_is_reported_but_never_rewritten() {
+        for input in [
+            "find . | xargs -r rm\n",
+            "find . | xargs -rn1 rm\n",
+            "find . | xargs -rt rm\n",
+        ] {
+            let out = run_fix(input);
+            assert_eq!(out.content, input, "xargs line must be left alone");
+            assert_eq!(out.fixed_count, 0);
+            assert!(out.unfixed_count >= 1, "must still be reported: {input:?}");
+        }
+    }
+
+    /// A backslash that is itself escaped must not be read as the start of a
+    /// PCRE class: `'\\d+'` is a literal backslash then `d+`, not a digit
+    /// class. The naive str::replace turned it into `'\[0-9]+'`.
+    #[test]
+    fn grep_transform_leaves_an_escaped_backslash_alone() {
+        assert_eq!(pcre_to_ere(r"\\d+"), r"\\d+");
+        assert_eq!(pcre_to_ere(r"\\\d"), r"\\[0-9]");
+        let line = "HELP=\"see grep -P '\\\\d+' file\"\n";
+        let out = run_fix(line);
+        assert!(
+            !out.content.contains(r"\[0-9]"),
+            "escaped backslash was mangled: {:?}",
+            out.content
+        );
     }
 
     #[test]
@@ -314,6 +367,68 @@ mod tests {
         let out = run_fix("declare -A mymap\n");
         assert_eq!(out.fixed_count, 0);
         assert!(out.unfixed_count >= 1);
+    }
+
+    /// Corpus-wide guard: for every rule that REWRITES anything (`replace` or
+    /// `transform`), running its own `examples.bad` through the real fixer
+    /// must produce exactly its `examples.good`.
+    ///
+    /// The `test_cases` guards only prove a rule MATCHES the right lines --
+    /// they say nothing about what the rewrite produces. That gap shipped five
+    /// broken templates at once: `bash4-pipe-stderr` turned `command |& grep
+    /// err` into `command 2>&1 |rep err`, `bash4-negative-subscript` turned
+    /// `${arr[-1]}` into `-1]}`, `sed-extended-regex-r` dropped bundled flags,
+    /// and `date-d-epoch` and `echo-escape` each contradicted their own
+    /// documented output. Every one produced valid bash, so `bash -n` passed
+    /// them all.
+    #[test]
+    fn every_rewriting_rule_turns_its_bad_example_into_its_good_example() {
+        let rs = load_builtin().unwrap();
+        let mut failures: Vec<String> = Vec::new();
+        let mut checked = 0_usize;
+        for rule in &rs.rules {
+            if !matches!(rule.fix_type, FixType::Replace | FixType::Transform) {
+                continue;
+            }
+            if rule.examples.bad.is_empty() || rule.examples.good.is_empty() {
+                failures.push(format!(
+                    "rule {} rewrites but has no bad/good example pair",
+                    rule.id
+                ));
+                continue;
+            }
+            // An example pair where bad == good would pass vacuously without
+            // the fixer doing anything at all.
+            if rule.examples.bad == rule.examples.good {
+                failures.push(format!(
+                    "rule {} has identical bad/good examples, so this guard proves nothing",
+                    rule.id
+                ));
+                continue;
+            }
+            checked += 1;
+            let text = synthesise_script(rule, &rule.examples.bad);
+            let out = run_fix(&text);
+            let got = out.content.lines().last().unwrap_or_default().to_string();
+            if got != rule.examples.good {
+                failures.push(format!(
+                    "rule {}: {:?} rewrote to {:?}, expected {:?}",
+                    rule.id, rule.examples.bad, got, rule.examples.good
+                ));
+            }
+        }
+        assert!(
+            failures.is_empty(),
+            "rewrite failures ({}):\n{}",
+            failures.len(),
+            failures.join("\n")
+        );
+        // Guard the guard: if a refactor ever made this iterate nothing, it
+        // would pass silently and the whole class of defect would come back.
+        assert!(
+            checked >= 8,
+            "only {checked} rewriting rules were checked -- the guard has gone vacuous"
+        );
     }
 
     #[test]

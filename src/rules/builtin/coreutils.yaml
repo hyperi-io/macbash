@@ -1,5 +1,5 @@
 # Project:   macbash
-# File:      internal/rules/builtin/coreutils.yaml
+# File:      src/rules/builtin/coreutils.yaml
 # Purpose:   Rules for GNU coreutils compatibility issues
 # Language:  YAML
 #
@@ -15,10 +15,21 @@ rules:
     name: "sed -i without backup extension"
     description: |
       GNU sed allows 'sed -i' without a backup extension, but BSD sed (macOS)
-      requires an argument after -i. Use 'sed -i.bak' for portability, or
-      'sed -i '' for no backup on BSD.
+      requires an argument after -i, and silently eats the next word - the
+      sed script itself - as the backup suffix. Use 'sed -i.bak' for a script
+      that must run on both, or an empty suffix (sed -i '') for BSD only.
     severity: error
-    pattern: '\bsed\s+(-[a-zA-Z]*i)\s+([''"])'
+    # The trailing [^'"] is what makes this per-MATCH rather than per-line.
+    # An empty quoted suffix (sed -i '') is the CORRECT BSD no-backup form:
+    # the quoted token IS the (empty) suffix, not the script. Requiring a
+    # non-quote character straight after the opening quote excludes it
+    # without a backreference, lookaround, or a negative_pattern (issue #6).
+    #
+    # A negative_pattern here would be wrong: it vetoes the whole LINE, so
+    # `sed -i '' 's/a/b/' f1 && sed -i 's/c/d/' f2` would report nothing, and
+    # even a `sed -i ''` inside an unrelated quoted string would suppress a
+    # real finding on the same line.
+    pattern: '\bsed\s+(-[a-zA-Z]*i)\s+([''"][^''"])'
     fix_type: suggest
     fix_template: "sed -i.bak"
     examples:
@@ -40,6 +51,11 @@ rules:
         - "sed -i.orig 's/foo/bar/' file.txt"
         - "sed 's/foo/bar/' file.txt"
         - "sed -n 's/foo/bar/p' file.txt"
+        # BSD no-backup form -- correct on macOS, must not be flagged.
+        - "sed -i '' 's/foo/bar/' file.txt"
+        - 'sed -i "" "s/old/new/g" config.cfg'
+        - "sed -i '' -e 's/a/b/' -e 's/c/d/' f.txt"
+        - "sed -Ei '' 's/foo/bar/' file.txt"
 
   - id: sed-extended-regex-r
     name: "sed -r (GNU extended regex)"
@@ -47,9 +63,12 @@ rules:
       GNU sed uses -r for extended regex, BSD sed uses -E.
       Use -E which works on both (GNU sed also accepts -E).
     severity: warning
-    pattern: '\bsed\s+(-[a-zA-Z]*r[a-zA-Z]*|-r)\s'
+    # Split the flag cluster around the r so bundled flags survive the
+    # rewrite: -rn becomes -En, not a bare -E that silently drops the n.
+    # The trailing \s is consumed by the match, so the template restores it.
+    pattern: '\bsed\s+-([a-zA-Z]*)r([a-zA-Z]*)\s'
     fix_type: replace
-    fix_template: "sed -E"
+    fix_template: "sed -${1}E${2} "
     examples:
       bad: "sed -r 's/foo+/bar/' file.txt"
       good: "sed -E 's/foo+/bar/' file.txt"
@@ -76,7 +95,7 @@ rules:
     severity: error
     pattern: '\bgrep\s+(-[a-zA-Z]*P[a-zA-Z]*\s|-P\s)'
     fix_type: transform
-    fix_template: "grep -E with ERE pattern (auto-converts \\d→[0-9], \\w→[[:alnum:]_], \\s→[[:space:]])"
+    fix_template: "grep -E with ERE pattern (auto-converts \\d -> [0-9], \\w -> [[:alnum:]_], \\s -> [[:space:]])"
     why_unfixable: "Pattern uses PCRE features (\\K, lookbehinds (?<=), lookaheads (?=)) that have no ERE equivalent. Convert manually or use perl -ne instead"
     examples:
       bad: "grep -P '\\d+' file.txt"
@@ -116,7 +135,9 @@ rules:
     why_unfixable: "Pattern uses PCRE features (\\K, (?<=), (?=)) that have no ERE equivalent. Use perl -ne instead"
     examples:
       bad: "grep -oP '\\w+' file.txt"
-      good: "grep -oE '[a-zA-Z0-9_]+' file.txt"
+      # What the transform actually emits -- pcre_to_ere maps \w to the POSIX
+      # class, not to an explicit range.
+      good: "grep -oE '[[:alnum:]_]+' file.txt"
     tags: [coreutils, grep]
     test_cases:
       should_match:
@@ -243,8 +264,14 @@ rules:
       date -d @EPOCH is GNU-only. BSD date uses -r EPOCH.
     severity: error
     pattern: '\bdate\s+-d\s+@'
-    fix_type: replace
-    fix_template: "date -r"
+    # NOT auto-fixed. GNU date's -r is --reference=FILE, not an epoch, so
+    # rewriting to 'date -r EPOCH' turns a working Linux script into a
+    # macOS-only one -- verified: `gdate -r 1609459200` exits 1 with
+    # "No such file or directory". There is no portable spelling, so this
+    # stays advice rather than a silent one-way conversion.
+    fix_type: suggest
+    fix_template: "date -r EPOCH (BSD) -- there is no form that works on both"
+    why_unfixable: "BSD uses 'date -r EPOCH', GNU uses 'date -d @EPOCH', and GNU's -r means --reference=FILE. Branch on uname, or precompute the formatted string, rather than picking one"
     examples:
       bad: "date -d @1609459200"
       good: "date -r 1609459200"
@@ -289,7 +316,7 @@ rules:
     pattern: '\bstat\s+-c\s'
     fix_type: suggest
     fix_template: "stat -f FORMAT (BSD)"
-    why_unfixable: "BSD stat uses -f instead of -c, with DIFFERENT format specifiers: GNU %s (size)→BSD %z, GNU %Y (mtime epoch)→BSD %m, GNU %U (owner)→BSD %Su, GNU %G (group)→BSD %Sg, GNU %a (perms octal)→BSD %Lp"
+    why_unfixable: "BSD stat uses -f instead of -c, with DIFFERENT format specifiers: GNU %s (size) -> BSD %z, GNU %Y (mtime epoch) -> BSD %m, GNU %U (owner) -> BSD %Su, GNU %G (group) -> BSD %Sg, GNU %a (perms octal) -> BSD %Lp"
     examples:
       bad: "stat -c '%s' file.txt"
       good: "stat -f '%z' file.txt  # BSD equivalent for size"
@@ -332,8 +359,17 @@ rules:
       so -r is unnecessary and will cause an error.
     severity: error
     pattern: '\bxargs\s+(-[a-zA-Z]*r|-r|--no-run-if-empty)'
-    fix_type: replace
-    fix_template: "xargs"
+    # NOT auto-fixed. Two independent reasons, both verified:
+    #  1. There is no portable form. Dropping -r is correct for BSD, but GNU
+    #     xargs WITHOUT -r runs the command once on empty input -- so the
+    #     rewrite silently changes behaviour on the Linux box the script came
+    #     from, and under `set -e` it can kill the pipeline.
+    #  2. The pattern consumes the whole flag token, so a template could not
+    #     restore a cluster anyway: `xargs -rn1` became `xargsn1`, a command
+    #     that does not exist. Valid bash, so `bash -n` passed it.
+    fix_type: suggest
+    fix_template: "xargs (drop -r; guard the empty case explicitly if the script also runs on GNU)"
+    why_unfixable: "No portable form. BSD xargs skips empty input by default; GNU xargs without -r runs the command once. Removing -r changes behaviour on Linux, so choose deliberately -- e.g. 'find . -name x -exec cmd {} +' avoids the question entirely"
     examples:
       bad: "find . -name '*.txt' | xargs -r rm"
       good: "find . -name '*.txt' | xargs rm"

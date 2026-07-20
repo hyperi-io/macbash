@@ -1,0 +1,16 @@
+---
+source: tests/cli_snapshot.rs
+assertion_line: 55
+expression: out
+---
+[dry-run] Would fix probe.sh -> probe.sh (2 fixes, 4 unfixable)
+--- Preview of changes ---
+#!/usr/bin/env bash
+find . -name '*.tmp' | xargs -r rm
+grep -E '[0-9]+' numbers.txt
+date -d @1609459200
+printf "%b\n" "done"
+
+--- End preview ---
+
+Total: 2 fixes applied, 4 unfixable issues

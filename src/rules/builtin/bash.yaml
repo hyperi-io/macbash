@@ -1,5 +1,5 @@
 # Project:   macbash
-# File:      internal/rules/builtin/bash.yaml
+# File:      src/rules/builtin/bash.yaml
 # Purpose:   Rules for bash version compatibility (macOS ships bash 3.2)
 # Language:  YAML
 #
@@ -128,9 +128,20 @@ rules:
       The |& operator (pipe stdout and stderr) requires bash 4.0+.
       Use 2>&1 | for portable stderr redirection.
     severity: error
-    pattern: '\|&\s*\w'
+    # The trailing \w anchors the replacement to the start of the piped-to
+    # command; it must be CAPTURED and put back, or the rewrite eats that
+    # character ("|& grep" -> "|rep") and produces valid bash calling a
+    # command that does not exist -- which `bash -n` cannot catch.
+    pattern: '\|&\s*(\w)'
+    # The \w does NOT distinguish the operator from a |& inside a string, so
+    # this does: a quote earlier on the line, with no closing quote before the
+    # |&, means we are inside a string literal. Without it, prose like
+    # `usage="pipe with |& to merge"` and regexes like `grep -E 'foo|&bar'`
+    # were silently rewritten. Costs a false negative when an unrelated quoted
+    # string precedes a real |& on the same line -- the safe direction.
+    negative_pattern: '[''"][^''"]*\|&'
     fix_type: replace
-    fix_template: "2>&1 |"
+    fix_template: "2>&1 | $1"
     examples:
       bad: "command |& grep error"
       good: "command 2>&1 | grep error"
@@ -143,6 +154,11 @@ rules:
       should_not_match:
         - "command 2>&1 | grep error"
         - "echo 'pipe operators: | |&'"
+        # |& inside a string literal is not the operator -- rewriting these
+        # corrupted prose and, worse, an ERE alternation.
+        - 'usage="pipe with |& to merge stderr"'
+        - "echo 'use |& carefully on bash 4'"
+        - "grep -E 'foo|&bar' f"
 
   - id: bash4-negative-subscript
     name: "Negative array subscript (bash 4.3+)"
@@ -152,7 +168,13 @@ rules:
     severity: error
     pattern: '\$\{([a-zA-Z_][a-zA-Z0-9_]*)\[-1\]\}'
     fix_type: replace
-    fix_template: '${$1[${#$1[@]}-1]}'
+    # Ugly but load-bearing. The replacement string belongs to the regex
+    # crate, where $ starts a capture reference -- so every shell $ has to be
+    # escaped as $$, and the capture itself braced as ${1} so the following
+    # '[' is not read as part of the group name. Written the obvious way
+    # ('${$1[${#$1[@]}-1]}') the engine reads the whole thing as one invalid
+    # group name, expands it to nothing, and rewrites ${arr[-1]} to '-1]}'.
+    fix_template: '$${${1}[$${#${1}[@]}-1]}'
     examples:
       bad: 'last="${arr[-1]}"'
       good: 'last="${arr[${#arr[@]}-1]}"'
@@ -226,7 +248,7 @@ rules:
     severity: warning
     pattern: '\becho\s+-e\s+'
     fix_type: replace
-    fix_template: 'printf "%b\\n" '
+    fix_template: 'printf "%b\n" '
     examples:
       bad: 'echo -e "line1\nline2"'
       good: 'printf "%b\n" "line1\nline2"'
@@ -276,7 +298,14 @@ rules:
       /bin/bash may not exist or may be an old version on some systems.
       Use #!/usr/bin/env bash for better portability.
     severity: info
-    pattern: '^#!/bin/bash'
+    # Anchored to end-of-line so a shebang WITH flags is left alone. Linux's
+    # binfmt_script passes everything after the interpreter as a single argv
+    # element, so rewriting '#!/bin/bash -e' to '#!/usr/bin/env bash -e' execs
+    # env with one argument "bash -e" and the script dies with
+    # "env: 'bash -e': No such file or directory". BSD splits the arguments,
+    # so this breaks only on the platform the rewrite was meant to keep
+    # working. Not worth flagging a form we must not fix.
+    pattern: '^#!/bin/bash\s*$'
     fix_type: replace
     fix_template: "#!/usr/bin/env bash"
     examples:
@@ -288,13 +317,14 @@ rules:
     test_cases:
       should_match:
         - "#!/bin/bash"
-        - "#!/bin/bash -e"
-        - "#!/bin/bash -eu"
       should_not_match:
         - "#!/usr/bin/env bash"
         - "#!/bin/sh"
         - "#!/usr/bin/bash"
         - " #!/bin/bash"
+        # Flagged forms are deliberately NOT matched -- see the note above.
+        - "#!/bin/bash -e"
+        - "#!/bin/bash -eu"
 
   # getopt
 

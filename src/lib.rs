@@ -11,3 +11,6 @@ pub mod fixer;
 pub mod output;
 pub mod rules;
 pub mod scanner;
+
+#[cfg(test)]
+mod testutil;

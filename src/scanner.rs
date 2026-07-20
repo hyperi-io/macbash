@@ -15,15 +15,17 @@ use thiserror::Error;
 
 use crate::rules::{FixType, MatchHit, RuleSet, Severity};
 
+// Display strings omit `{source}` on purpose -- see the note on LoadError in
+// src/rules/loader.rs.
 #[derive(Debug, Error)]
 pub enum ScanError {
-    #[error("compiling pattern for rule {rule_id}: {source}")]
+    #[error("compiling pattern for rule {rule_id}")]
     BadPattern {
         rule_id: String,
         #[source]
         source: regex::Error,
     },
-    #[error("reading {path}: {source}")]
+    #[error("reading {path}")]
     Read {
         path: String,
         #[source]
@@ -105,10 +107,11 @@ impl Scanner {
         let mut in_heredoc = false;
         let mut heredoc_delim = String::new();
 
-        for (idx, raw) in text.lines().enumerate() {
+        let lines: Vec<&str> = text.lines().collect();
+        for (idx, raw) in lines.iter().enumerate() {
             // .lines() already handles \r\n by stripping the \r; line numbers
             // are 1-based for users.
-            let line = raw;
+            let line = *raw;
             let line_num = idx + 1;
 
             if line_num == 1 && line.starts_with("#!") {
@@ -122,7 +125,16 @@ impl Scanner {
                 }
                 continue;
             }
-            if let Some(d) = detect_heredoc(line) {
+            // Only enter here-doc mode if the terminator ACTUALLY appears
+            // later in the file. Detection is a regex over one line, so it
+            // will always have false positives -- and a false positive used
+            // to swallow every remaining line, making the scanner report a
+            // broken script as clean and exit 0. That is the worst failure a
+            // linter has, so the cost of a misdetection is capped here rather
+            // than trusted to the regex.
+            if let Some(d) = detect_heredoc(line)
+                && lines[idx + 1..].iter().any(|l| l.trim() == d)
+            {
                 in_heredoc = true;
                 heredoc_delim = d;
             }
@@ -227,11 +239,29 @@ pub fn group_by_file(matches: &[MatchHit]) -> BTreeMap<String, Vec<&MatchHit>> {
 }
 
 /// Detect here-doc start; returns the delimiter or None.
-/// Matches the Go regex `<<-?\s*['"]?(\w+)['"]?`.
+///
+/// Derived from the Go regex `<<-?\s*['"]?(\w+)['"]?`, with two exclusions the
+/// original lacked. Both were false positives that put the scanner into
+/// here-doc mode on a line that starts no here-doc:
+///
+/// - `<<<` is a here-STRING. The bare regex matched from the second `<` and
+///   read the first word of the string as a delimiter. `(?:^|[^<])` before the
+///   `<<` stops that.
+/// - `$((1 << 3))` is an arithmetic left shift, and `3` is not a delimiter.
+///   A here-doc delimiter that is entirely digits is legal but effectively
+///   never used, so rejecting it is far cheaper than the false positive.
+///
+/// `scan_text` additionally requires the delimiter to actually appear later in
+/// the file, so anything this still gets wrong degrades to scanning a few
+/// extra lines rather than skipping the rest of the file.
 pub fn detect_heredoc(line: &str) -> Option<String> {
     static RE: OnceLock<Regex> = OnceLock::new();
-    let re = RE.get_or_init(|| Regex::new(r#"<<-?\s*['"]?(\w+)['"]?"#).unwrap());
-    re.captures(line).map(|c| c[1].to_string())
+    let re = RE.get_or_init(|| Regex::new(r#"(?:^|[^<])<<-?\s*['"]?(\w+)['"]?"#).unwrap());
+    let delim = re.captures(line).map(|c| c[1].to_string())?;
+    if delim.bytes().all(|b| b.is_ascii_digit()) {
+        return None;
+    }
+    Some(delim)
 }
 
 #[cfg(test)]
@@ -390,6 +420,13 @@ mod tests {
             ("cat <<-EOF", Some("EOF")),
             ("cat <<-'MARKER'", Some("MARKER")),
             ("echo hello", None),
+            // Here-STRING, not a here-doc. The bare `<<-?...` regex matched
+            // from the second `<` and took "some" as a delimiter.
+            ("grep -q pat <<< \"some text\"", None),
+            ("grep -q pat <<<\"$var\"", None),
+            // Arithmetic left shift, not a here-doc.
+            ("mask=$((1 << 3))", None),
+            ("x=$(( 1 << 16 ))", None),
         ];
         for (line, want) in cases {
             let got = detect_heredoc(line);
@@ -399,6 +436,57 @@ mod tests {
                 "detect_heredoc({line:?}) returned {got:?}"
             );
         }
+    }
+
+    /// A linter that reports a broken script as clean is worse than one that
+    /// misses a rule. A here-doc false positive used to swallow every
+    /// remaining line of the file, so `mask=$((1 << 3))` or a here-string
+    /// above the problems made macbash print "No issues found." and exit 0.
+    #[test]
+    fn a_false_heredoc_does_not_blind_the_rest_of_the_file() {
+        let rs = load_builtin().unwrap();
+        let s = Scanner::new(&rs).unwrap();
+        for preamble in [
+            "mask=$((1 << 3))",
+            "grep -q pattern <<< \"some text\"",
+            // Even a plausible-looking delimiter that never terminates must
+            // not swallow the file -- scan_text requires the terminator to
+            // exist further down.
+            "cat <<NEVER_CLOSED",
+        ] {
+            let text =
+                format!("#!/bin/bash\n{preamble}\nsed -i 's/a/b/' file.txt\ndeclare -A map\n");
+            let hits = s.scan_text(&text, "t.sh");
+            assert!(
+                hits.iter().any(|h| h.rule_id == "sed-inplace-no-backup"),
+                "sed finding lost after {preamble:?}"
+            );
+            assert!(
+                hits.iter().any(|h| h.rule_id == "bash4-associative-array"),
+                "declare -A finding lost after {preamble:?}"
+            );
+        }
+    }
+
+    /// The flip side: a REAL here-doc still suppresses its body.
+    #[test]
+    fn a_real_heredoc_still_skips_its_body() {
+        let rs = load_builtin().unwrap();
+        let s = Scanner::new(&rs).unwrap();
+        let text = concat!(
+            "#!/bin/bash\n",
+            "cat <<EOF\n",
+            "sed -i 's/a/b/' inside.txt\n",
+            "EOF\n",
+            "sed -i 's/c/d/' outside.txt\n",
+        );
+        let hits = s.scan_text(text, "t.sh");
+        let sed: Vec<_> = hits
+            .iter()
+            .filter(|h| h.rule_id == "sed-inplace-no-backup")
+            .collect();
+        assert_eq!(sed.len(), 1, "only the line outside the here-doc counts");
+        assert_eq!(sed[0].line, 5);
     }
 
     #[test]
@@ -556,23 +644,7 @@ mod tests {
         assert_eq!(g["b.sh"].len(), 1);
     }
 
-    /// Wrap a single-line example into a full script body matching the rule's
-    /// shebang gate. Rules whose pattern itself targets the shebang line are
-    /// fed verbatim (a synthetic shebang would self-match those rules).
-    fn synthesise_script(rule: &Rule, example: &str) -> String {
-        if rule.pattern.starts_with("^#") {
-            // Shebang-pattern rule — feed example directly as the shebang line.
-            return format!("{example}\n");
-        }
-        let header = if rule.shebang_match.is_empty() {
-            "#!/bin/bash"
-        } else if rule.shebang_match.contains("sh") && !rule.shebang_match.contains("bash") {
-            "#!/bin/sh"
-        } else {
-            "#!/bin/bash"
-        };
-        format!("{header}\n{example}\n")
-    }
+    use crate::testutil::synthesise_script;
 
     #[test]
     fn every_should_match_example_matches_its_own_rule() {

@@ -10,7 +10,7 @@
 """Stamp a release version into VERSION, Cargo.toml, and Cargo.lock.
 
 Reads the workspace member name from Cargo.toml so the same script works
-for any project that drops it in — no name hardcoded.
+for any project that drops it in - no name hardcoded.
 """
 
 from __future__ import annotations
@@ -58,7 +58,7 @@ def main() -> None:
         new_lock, count = re.subn(pattern, rf"\g<1>{version}\g<2>", lock, count=1)
         if count == 0:
             print(
-                f"release-prepare: warning — no Cargo.lock entry found for "
+                f"release-prepare: warning - no Cargo.lock entry found for "
                 f"package {name!r}; lockfile unchanged",
                 file=sys.stderr,
             )

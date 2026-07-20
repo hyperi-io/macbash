@@ -1,6 +1,6 @@
 # Project:   macbash
 # File:      .github/workflows/package.yml
-# Purpose:   Post-release packaging — runs after binaries land in R2.
+# Purpose:   Post-release packaging - runs after binaries land in R2.
 #            Generates linux tarballs from hyperi-ci's raw binaries, builds
 #            deb/rpm via nfpm, renders homebrew + scoop manifests, and
 #            uploads all artefacts to R2 under the same versioned path.
@@ -17,7 +17,7 @@
 #            with hyperi-ci's slow publish step is tolerated.
 #
 # Status:    Linux + Darwin packaging is production. Scoop manifest is
-#            EXPERIMENTAL — not in the formal test path.
+#            EXPERIMENTAL - not in the formal test path.
 
 name: Package
 
@@ -42,7 +42,7 @@ env:
 
 jobs:
   resolve-tag:
-    # workflow_run gives us no inputs — derive the tag from the latest v* tag,
+    # workflow_run gives us no inputs - derive the tag from the latest v* tag,
     # same pattern as cross-build.yml's resolve-tag job.
     name: Resolve tag to package
     runs-on: ubuntu-latest
@@ -53,7 +53,7 @@ jobs:
       tag: ${{ steps.pick.outputs.tag }}
     steps:
       - name: Checkout (with tags)
-        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
         with:
           fetch-depth: 0
           fetch-tags: true
@@ -84,19 +84,24 @@ jobs:
     name: Linux ${{ matrix.arch }} tarball + sha
     needs: resolve-tag
     runs-on: ubuntu-latest
+    # The resolved tag comes from `git tag --list` and git permits backticks
+    # and $() in a ref name, so it is untrusted input. Bind it once here and
+    # read "$TAG" in the shell -- never interpolate it into a run: body.
+    env:
+      TAG: ${{ needs.resolve-tag.outputs.tag }}
     strategy:
       fail-fast: false
       matrix:
         arch: [amd64, arm64]
     steps:
-      - name: Checkout (default branch — packaging code lives here, not in the tagged source)
-        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - name: Checkout (default branch - packaging code lives here, not in the tagged source)
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
 
       - name: Wait for raw linux binary on R2
         shell: bash
         run: |
           set -euo pipefail
-          URL="${R2_PUBLIC}/macbash/${{ needs.resolve-tag.outputs.tag }}/macbash-linux-${{ matrix.arch }}"
+          URL="${R2_PUBLIC}/macbash/${TAG}/macbash-linux-${{ matrix.arch }}"
           for i in $(seq 1 20); do
             if curl -fsI "$URL" >/dev/null 2>&1; then exit 0; fi
             echo "attempt $i: not yet at $URL, sleeping 15s"; sleep 15
@@ -109,7 +114,7 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p dist
-          curl -fsSL "${R2_PUBLIC}/macbash/${{ needs.resolve-tag.outputs.tag }}/macbash-linux-${{ matrix.arch }}" \
+          curl -fsSL "${R2_PUBLIC}/macbash/${TAG}/macbash-linux-${{ matrix.arch }}" \
             -o "dist/macbash-linux-${{ matrix.arch }}"
           chmod +x "dist/macbash-linux-${{ matrix.arch }}"
 
@@ -137,7 +142,7 @@ jobs:
           aws configure set aws_access_key_id "$R2_ACCESS_KEY_ID"
           aws configure set aws_secret_access_key "$R2_SECRET_ACCESS_KEY"
           aws configure set region auto
-          for dest in "s3://${R2_BUCKET}/macbash/${{ needs.resolve-tag.outputs.tag }}/" "s3://${R2_BUCKET}/macbash/latest/"; do
+          for dest in "s3://${R2_BUCKET}/macbash/${TAG}/" "s3://${R2_BUCKET}/macbash/latest/"; do
             aws s3 cp --endpoint-url "$R2_ENDPOINT" \
               "dist/macbash-linux-${{ matrix.arch }}.tar.gz" "$dest"
             aws s3 cp --endpoint-url "$R2_ENDPOINT" \
@@ -148,13 +153,15 @@ jobs:
     name: nfpm deb + rpm (${{ matrix.arch }})
     runs-on: ubuntu-latest
     needs: [resolve-tag, linux-tarball]
+    env:
+      TAG: ${{ needs.resolve-tag.outputs.tag }}
     strategy:
       fail-fast: false
       matrix:
         arch: [amd64, arm64]
     steps:
-      - name: Checkout (default branch — packaging code lives here, not in the tagged source)
-        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - name: Checkout (default branch - packaging code lives here, not in the tagged source)
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
 
       - name: Install nfpm
         shell: bash
@@ -170,7 +177,7 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p dist
-          curl -fsSL "${R2_PUBLIC}/macbash/${{ needs.resolve-tag.outputs.tag }}/macbash-linux-${{ matrix.arch }}" \
+          curl -fsSL "${R2_PUBLIC}/macbash/${TAG}/macbash-linux-${{ matrix.arch }}" \
             -o "dist/macbash-linux-${{ matrix.arch }}"
           chmod +x "dist/macbash-linux-${{ matrix.arch }}"
 
@@ -180,7 +187,7 @@ jobs:
           NFPM_ARCH: ${{ matrix.arch }}
         run: |
           set -euo pipefail
-          version="${{ needs.resolve-tag.outputs.tag }}"; version="${version#v}"
+          version="${TAG}"; version="${version#v}"
           ./packaging/render-release.sh "$version" --from-r2 || true
           # render-release outputs packaging/dist/release/nfpm.yaml; confirm
           test -f packaging/dist/release/nfpm.yaml
@@ -206,7 +213,7 @@ jobs:
           aws configure set aws_access_key_id "$R2_ACCESS_KEY_ID"
           aws configure set aws_secret_access_key "$R2_SECRET_ACCESS_KEY"
           aws configure set region auto
-          for dest in "s3://${R2_BUCKET}/macbash/${{ needs.resolve-tag.outputs.tag }}/" "s3://${R2_BUCKET}/macbash/latest/"; do
+          for dest in "s3://${R2_BUCKET}/macbash/${TAG}/" "s3://${R2_BUCKET}/macbash/latest/"; do
             for f in out/*; do
               aws s3 cp --endpoint-url "$R2_ENDPOINT" "$f" "$dest"
             done
@@ -216,9 +223,11 @@ jobs:
     name: Render homebrew + scoop manifests + static install scripts
     runs-on: ubuntu-latest
     needs: [resolve-tag, linux-tarball]
+    env:
+      TAG: ${{ needs.resolve-tag.outputs.tag }}
     steps:
-      - name: Checkout (default branch — packaging code lives here, not in the tagged source)
-        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - name: Checkout (default branch - packaging code lives here, not in the tagged source)
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
 
       - name: Render static install scripts
         shell: bash
@@ -231,7 +240,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          version="${{ needs.resolve-tag.outputs.tag }}"; version="${version#v}"
+          version="${TAG}"; version="${version#v}"
           ./packaging/render-release.sh "$version" --from-r2
           find packaging/dist/release -type f | sort
 
@@ -247,19 +256,19 @@ jobs:
           aws configure set region auto
 
           # Per-version manifests under /<tag>/manifests/ + /latest/manifests/
-          for dest in "s3://${R2_BUCKET}/macbash/${{ needs.resolve-tag.outputs.tag }}/manifests/" \
+          for dest in "s3://${R2_BUCKET}/macbash/${TAG}/manifests/" \
                       "s3://${R2_BUCKET}/macbash/latest/manifests/"; do
             aws s3 cp --recursive --endpoint-url "$R2_ENDPOINT" \
               packaging/dist/release/ "$dest"
           done
 
           # Static install scripts at /macbash/install.sh (curl-pipe target).
-          # Also mirror to per-version path for reproducibility — pinning a
+          # Also mirror to per-version path for reproducibility - pinning a
           # tag-specific install.sh URL lets users install a known-good copy
           # of the script that downloaded the same-version binary.
           for f in install.sh install.ps1 uninstall.sh uninstall.ps1; do
             for dest in "s3://${R2_BUCKET}/macbash/$f" \
-                        "s3://${R2_BUCKET}/macbash/${{ needs.resolve-tag.outputs.tag }}/$f"; do
+                        "s3://${R2_BUCKET}/macbash/${TAG}/$f"; do
               # Use text/plain content-type so curl/iex render in browser too.
               ct="text/x-shellscript"
               case "$f" in *.ps1) ct="text/plain" ;; esac
@@ -277,6 +286,7 @@ jobs:
       PROJECT: macbash
       TAP_REPO: hyperi-io/homebrew-tap
       BUCKET_REPO: hyperi-io/scoop-bucket
+      TAG: ${{ needs.resolve-tag.outputs.tag }}
     steps:
       - name: Mint installation token via org GitHub App
         id: app-token
@@ -294,9 +304,9 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p staging
-          curl -fsSL "${R2_PUBLIC}/macbash/${{ needs.resolve-tag.outputs.tag }}/manifests/homebrew/${PROJECT}.rb" \
+          curl -fsSL "${R2_PUBLIC}/macbash/${TAG}/manifests/homebrew/${PROJECT}.rb" \
             -o staging/formula.rb
-          curl -fsSL "${R2_PUBLIC}/macbash/${{ needs.resolve-tag.outputs.tag }}/manifests/scoop/${PROJECT}.json" \
+          curl -fsSL "${R2_PUBLIC}/macbash/${TAG}/manifests/scoop/${PROJECT}.json" \
             -o staging/manifest.json
 
       - name: Configure git identity

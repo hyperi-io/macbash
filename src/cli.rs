@@ -152,7 +152,10 @@ fn run_inner(mut cli: Cli) -> Result<ExitCode> {
         }
     }
 
-    let rules = load_rules(cli.config.as_deref()).context("loading rules")?;
+    // No .context() here: load_rules already labels both of its failure modes
+    // ("loading builtin rules" / "loading custom rules"), and a second wrapper
+    // just prints "loading rules: loading custom rules: ...".
+    let rules = load_rules(cli.config.as_deref())?;
     let scanner = Scanner::new(&rules).context("compiling rule patterns")?;
     let mut matches = scanner
         .scan_files(cli.files.iter().map(PathBuf::as_path))
@@ -179,7 +182,7 @@ fn run_inner(mut cli: Cli) -> Result<ExitCode> {
 
 fn run_fix(cli: &Cli, matches: &[MatchHit], rules: &RuleSet) -> Result<ExitCode> {
     eprintln!(
-        "EXPERIMENTAL: macbash fix mode is experimental — review output and diff \
+        "EXPERIMENTAL: macbash fix mode is experimental - review output and diff \
          before committing rewritten scripts."
     );
     let mut fixer = Fixer::new(rules);
@@ -193,6 +196,17 @@ fn run_fix(cli: &Cli, matches: &[MatchHit], rules: &RuleSet) -> Result<ExitCode>
             .collect();
         let outcome: FixOutcome = fixer.fix_file(input, &file_matches)?;
         let out_path = determine_output_path(input, &cli.files, cli);
+        // -o must never quietly become -w. `-o .` resolves to the input's own
+        // directory, and joining the file name would overwrite the original
+        // with no backup -- while LONG_ABOUT tells the user -o writes
+        // somewhere else. Refuse instead.
+        if !cli.write && same_file(input, &out_path) {
+            anyhow::bail!(
+                "output path {} resolves to the input file {}; use -w to rewrite in place",
+                out_path.display(),
+                input.display()
+            );
+        }
         let validation_err = if outcome.fixed_count > 0 {
             validate_bash_syntax(&outcome.content).err()
         } else {
@@ -256,13 +270,43 @@ fn determine_output_path(input: &Path, all: &[PathBuf], cli: &Cli) -> PathBuf {
         return input.to_path_buf();
     }
     if let Some(out) = &cli.output {
-        if all.len() == 1 {
+        // A single input writes to -o as a FILE path, EXCEPT when -o is
+        // directory-shaped: an existing directory, or a path written with a
+        // trailing separator. Without that, `-o ./fixed/ scripts/*.sh` behaves
+        // differently depending on how many files the glob happened to match
+        // -- N=2 creates ./fixed/ and writes into it, N=1 tried to write the
+        // directory itself and failed with "Is a directory (os error 21)".
+        if all.len() == 1 && !looks_like_directory(out) {
             return out.clone();
         }
         let name = input.file_name().unwrap_or_default();
         return out.join(name);
     }
     input.to_path_buf()
+}
+
+/// Directory-shaped means "already a directory" OR "written with a trailing
+/// separator". The second half matters because the output directory usually
+/// does not exist yet in CI.
+fn looks_like_directory(p: &Path) -> bool {
+    if p.is_dir() {
+        return true;
+    }
+    p.to_string_lossy()
+        .chars()
+        .next_back()
+        .is_some_and(std::path::is_separator)
+}
+
+/// True when two paths name the same file on disk. Compares canonicalised
+/// paths so `.`/`./x.sh`/`x.sh` all collapse; falls back to a literal
+/// comparison when the output does not exist yet (in which case it cannot be
+/// the input).
+fn same_file(input: &Path, out: &Path) -> bool {
+    match (std::fs::canonicalize(input), std::fs::canonicalize(out)) {
+        (Ok(a), Ok(b)) => a == b,
+        _ => input == out,
+    }
 }
 
 fn write_output(path: &Path, content: &str) -> std::io::Result<()> {

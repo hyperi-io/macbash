@@ -1,0 +1,40 @@
+---
+source: tests/cli_snapshot.rs
+assertion_line: 42
+expression: out
+---
+{
+  "total_issues": 2,
+  "errors": 1,
+  "warnings": 1,
+  "infos": 0,
+  "matches": [
+    {
+      "file": "probe.sh",
+      "line": 2,
+      "column": 24,
+      "rule_id": "xargs-no-run-if-empty",
+      "rule_name": "xargs -r (no-run-if-empty)",
+      "severity": "error",
+      "description": "xargs -r is GNU-only. BSD xargs doesn't run on empty input by default,\nso -r is unnecessary and will cause an error.\n",
+      "content": "find . -name '*.tmp' | xargs -r rm",
+      "matched": "xargs -r",
+      "fix": "xargs (drop -r; guard the empty case explicitly if the script also runs on GNU)",
+      "fix_type": "suggest",
+      "why_unfixable": "No portable form. BSD xargs skips empty input by default; GNU xargs without -r runs the command once. Removing -r changes behaviour on Linux, so choose deliberately -- e.g. 'find . -name x -exec cmd {} +' avoids the question entirely"
+    },
+    {
+      "file": "probe.sh",
+      "line": 3,
+      "column": 1,
+      "rule_id": "echo-escape",
+      "rule_name": "echo -e (escape sequences)",
+      "severity": "warning",
+      "description": "echo -e is not portable across shells and platforms.\nUse printf for portable escape sequence handling.\n",
+      "content": "echo -e \"done\"",
+      "matched": "echo -e ",
+      "fix": "printf \"%b\\n\" ",
+      "fix_type": "replace"
+    }
+  ]
+}
