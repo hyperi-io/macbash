@@ -8,6 +8,12 @@
 # Override defaults with HYPERCI_* env vars.
 # Reference: config/defaults.yaml in hyperi-ci.
 
+# Category 4, general OSS: public, Apache-2.0, publishes, neutral branding
+# (no HyperI brand furniture). This records what the repo already does -- the
+# LICENSE, the public visibility and `publish.target: oss` below were all
+# already in place; only the declaration was missing.
+classification: oss
+
 language: rust
 project:
   status: experimental
