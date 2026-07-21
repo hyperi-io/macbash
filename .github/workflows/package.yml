@@ -288,21 +288,37 @@ jobs:
       BUCKET_REPO: hyperi-io/scoop-bucket
       TAG: ${{ needs.resolve-tag.outputs.tag }}
     steps:
-      - name: Mint installation token via org GitHub App
-        id: app-token
+      # HOMEBREW_APP_* not GH_APP_*: the GH_APP_* org secrets are
+      # visibility=selected and macbash is not in the grant list, so they
+      # arrive empty and create-github-app-token fails with "client-id must be
+      # non-empty". HOMEBREW_APP_* is visibility=all and is the app installed
+      # on the tap.
+      #
+      # Homebrew (production) and Scoop (EXPERIMENTAL) get SEPARATE token mints
+      # on purpose. create-github-app-token fails the WHOLE request if any
+      # named repo is missing or out of the app's installation -- and
+      # scoop-bucket does not exist yet. A single combined mint let the missing
+      # experimental bucket take the production homebrew push down with it.
+      - name: Mint homebrew-tap token
+        id: tap-token
         uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3
         with:
-          # HOMEBREW_APP_* not GH_APP_*: the GH_APP_* org secrets have
-          # visibility=selected and macbash is not in the grant list, so they
-          # arrive empty and the action fails with "client-id must be
-          # non-empty". The HOMEBREW_APP_* pair is visibility=all and is the
-          # purpose-built app for the tap/bucket push.
           app-id: ${{ secrets.HOMEBREW_APP_ID }}
           private-key: ${{ secrets.HOMEBREW_APP_PRIVATE_KEY }}
           owner: hyperi-io
-          repositories: |
-            homebrew-tap
-            scoop-bucket
+          repositories: homebrew-tap
+
+      # Best-effort: fails (and is skipped) until scoop-bucket exists and the
+      # app is installed on it. Does not gate the job.
+      - name: Mint scoop-bucket token
+        id: bucket-token
+        continue-on-error: true
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3
+        with:
+          app-id: ${{ secrets.HOMEBREW_APP_ID }}
+          private-key: ${{ secrets.HOMEBREW_APP_PRIVATE_KEY }}
+          owner: hyperi-io
+          repositories: scoop-bucket
 
       - name: Fetch rendered manifests from R2
         shell: bash
@@ -323,7 +339,7 @@ jobs:
       - name: Push to homebrew-tap
         shell: bash
         env:
-          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          GH_TOKEN: ${{ steps.tap-token.outputs.token }}
           TAG: ${{ needs.resolve-tag.outputs.tag }}
         run: |
           set -euo pipefail
@@ -341,9 +357,13 @@ jobs:
           fi
 
       - name: Push to scoop-bucket
+        # Skipped, not failed, while the bucket token could not be minted --
+        # scoop is EXPERIMENTAL and the bucket repo is not created yet. The
+        # rendered manifest still lands on R2 for manual bucket setup.
+        if: steps.bucket-token.outcome == 'success'
         shell: bash
         env:
-          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          GH_TOKEN: ${{ steps.bucket-token.outputs.token }}
           TAG: ${{ needs.resolve-tag.outputs.tag }}
         run: |
           set -euo pipefail
