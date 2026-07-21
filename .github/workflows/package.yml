@@ -292,8 +292,13 @@ jobs:
         id: app-token
         uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3
         with:
-          app-id: ${{ secrets.GH_APP_ID }}
-          private-key: ${{ secrets.GH_APP_PRIVATE_KEY }}
+          # HOMEBREW_APP_* not GH_APP_*: the GH_APP_* org secrets have
+          # visibility=selected and macbash is not in the grant list, so they
+          # arrive empty and the action fails with "client-id must be
+          # non-empty". The HOMEBREW_APP_* pair is visibility=all and is the
+          # purpose-built app for the tap/bucket push.
+          app-id: ${{ secrets.HOMEBREW_APP_ID }}
+          private-key: ${{ secrets.HOMEBREW_APP_PRIVATE_KEY }}
           owner: hyperi-io
           repositories: |
             homebrew-tap
