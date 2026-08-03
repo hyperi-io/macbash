@@ -16,8 +16,19 @@ name: CI
     inputs:
       tag:
         type: string
-        required: true
+        required: false
+        default: ""
         description: "Tag to publish (e.g. v1.3.0)"
+      from-head:
+        type: string
+        required: false
+        default: ""
+        description: "'true' to release/retry the current HEAD."
+      bump:
+        type: string
+        required: false
+        default: "auto"
+        description: "from-head version: auto | patch | minor | X.Y.Z (exact)."
 
 jobs:
   ci:
@@ -40,4 +51,6 @@ jobs:
     uses: hyperi-io/hyperi-ci/.github/workflows/rust-ci.yml@main
     with:
       tag: ${{ inputs.tag || '' }}
+      from-head: ${{ inputs.from-head || '' }}
+      bump: ${{ inputs.bump || 'auto' }}
     secrets: inherit
