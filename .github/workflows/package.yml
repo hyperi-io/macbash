@@ -301,9 +301,9 @@ jobs:
       # experimental bucket take the production homebrew push down with it.
       - name: Mint homebrew-tap token
         id: tap-token
-        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
         with:
-          app-id: ${{ secrets.HOMEBREW_APP_ID }}
+          client-id: ${{ vars.HOMEBREW_APP_CLIENT_ID }}
           private-key: ${{ secrets.HOMEBREW_APP_PRIVATE_KEY }}
           owner: hyperi-io
           repositories: homebrew-tap
@@ -313,9 +313,9 @@ jobs:
       - name: Mint scoop-bucket token
         id: bucket-token
         continue-on-error: true
-        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
         with:
-          app-id: ${{ secrets.HOMEBREW_APP_ID }}
+          client-id: ${{ vars.HOMEBREW_APP_CLIENT_ID }}
           private-key: ${{ secrets.HOMEBREW_APP_PRIVATE_KEY }}
           owner: hyperi-io
           repositories: scoop-bucket
