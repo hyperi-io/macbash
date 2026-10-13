@@ -308,10 +308,12 @@ jobs:
           owner: hyperi-io
           repositories: homebrew-tap
 
-      # Best-effort: fails (and is skipped) until scoop-bucket exists and the
-      # app is installed on it. Does not gate the job.
+      # Off until scoop-bucket exists and the app is installed on it: set the
+      # repo variable SCOOP_BUCKET_ENABLED=true then. Best-effort once on, so a
+      # bucket problem never takes the homebrew push down with it.
       - name: Mint scoop-bucket token
         id: bucket-token
+        if: vars.SCOOP_BUCKET_ENABLED == 'true'
         continue-on-error: true
         uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
         with:
@@ -357,9 +359,9 @@ jobs:
           fi
 
       - name: Push to scoop-bucket
-        # Skipped, not failed, while the bucket token could not be minted --
-        # scoop is EXPERIMENTAL and the bucket repo is not created yet. The
-        # rendered manifest still lands on R2 for manual bucket setup.
+        # Skipped, not failed, unless the bucket token was minted -- scoop is
+        # EXPERIMENTAL and off until the bucket exists. The rendered manifest
+        # still lands on R2 for manual bucket setup.
         if: steps.bucket-token.outcome == 'success'
         shell: bash
         env:

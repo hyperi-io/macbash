@@ -85,11 +85,10 @@ cross-build.
 
 ## Versioning
 
-semantic-release owns the version. [.releaserc.yaml](../.releaserc.yaml) maps
-conventional-commit types to bumps: `feat` minor, `fix`/`perf`/`security`
-patch, everything else no release. `scripts/release-prepare.py` syncs the
-version into `VERSION`, `Cargo.toml` and `Cargo.lock` during the prepare step,
-and those files plus `CHANGELOG.md` are committed back.
+semantic-release owns the version, on its default conventional-commit rules:
+`feat` minor, `fix`/`perf` patch, everything else no release. hyperi-ci stamps
+the version into `VERSION`, `Cargo.toml` and `Cargo.lock` before the build, and
+those files plus `CHANGELOG.md` are committed back.
 
 Never hand-edit `CHANGELOG.md` or bump a version manually -- both are
 generated.
@@ -113,7 +112,7 @@ HTTP/2 200
 
 Then check the installer path end to end:
 
-```console
-$ curl -fsSL https://downloads.hyperi.io/macbash/install.sh | sh -s -- --user
-$ macbash --version
+```sh
+curl -fsSL https://downloads.hyperi.io/macbash/install.sh | sh -s -- --user
+macbash --version
 ```

@@ -34,7 +34,7 @@ pub enum LoadError {
     Parse {
         source_name: String,
         #[source]
-        source: serde_yaml_ng::Error,
+        source: serde_saphyr::Error,
     },
     #[error("invalid rule {id} in {source_name}: {reason}")]
     Invalid {
@@ -73,7 +73,7 @@ pub fn load_from_file(path: &Path) -> Result<RuleSet, LoadError> {
 }
 
 fn parse_ruleset(bytes: &[u8], source_name: &str) -> Result<RuleSet, LoadError> {
-    let mut rs: RuleSet = serde_yaml_ng::from_slice(bytes).map_err(|e| LoadError::Parse {
+    let mut rs: RuleSet = serde_saphyr::from_slice(bytes).map_err(|e| LoadError::Parse {
         source_name: source_name.to_string(),
         source: e,
     })?;

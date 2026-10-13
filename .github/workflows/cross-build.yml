@@ -170,16 +170,22 @@ jobs:
           key: cross-${{ matrix.target }}-${{ hashFiles('Cargo.lock') }}
 
       # Windows via cargo-zigbuild - pure Linux cross-compile, no MSVC needed.
+      # Zig comes from the hash-pinned ziglang wheel (x86_64 manylinux, the only
+      # zigbuild runner), which cargo-zigbuild runs as `python -m ziglang`.
       - name: Install zig
         if: matrix.zigbuild
-        uses: mlugg/setup-zig@d1434d08867e3ee9daa34448df10607b98908d29 # v2.2.1
-        with:
-          version: 0.15.1
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m venv "${RUNNER_TEMP}/zig"
+          printf '%s\n' 'ziglang==0.15.1 --hash=sha256:4e45994a0e608d9b16ecad255698f5557a2e24de0bd7ba9efb156ab3f3683d9a' > "${RUNNER_TEMP}/zig-requirements.txt"
+          "${RUNNER_TEMP}/zig/bin/python" -m pip install --no-deps --require-hashes -r "${RUNNER_TEMP}/zig-requirements.txt"
+          echo "CARGO_ZIGBUILD_PYTHON_PATH=${RUNNER_TEMP}/zig/bin/python" >> "${GITHUB_ENV}"
 
       - name: Install cargo-zigbuild
         if: matrix.zigbuild
         shell: bash
-        run: cargo install --locked cargo-zigbuild
+        run: cargo install --locked cargo-zigbuild --version 0.23.4
 
       - name: Build (native)
         if: ${{ !matrix.zigbuild }}
