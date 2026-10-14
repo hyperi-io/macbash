@@ -91,7 +91,7 @@ A Cross-build that refuses a run concludes `skipped`, and Package only follows a
 
 ## Versioned paths are write-once
 
-The Homebrew formula and `install.sh` pin the bytes at `/<tag>/` by SHA-256, so nothing overwrites them. Each upload checks R2 for the file it writes last (its `.sha256`, or `<tag>/install.sh` for the manifests), and when that exists it writes nothing, `latest/` included. The root `install.sh` is the exception: it is re-rendered from the default branch on every Package run. A re-run, or a CI run that published nothing new, therefore leaves the release alone. Replacing a published artefact means deleting it from R2 by hand first.
+The Homebrew formula and `install.sh` pin the bytes at `/<tag>/` by SHA-256, so nothing overwrites them. Each upload checks R2 for a file only it writes, uploaded last, and when that exists it writes nothing, `latest/` included. That file is the `.sha256` for the darwin, windows and package uploads, the tarball for the linux tarballs (hyperi-ci writes the linux `.sha256` first), and `<tag>/install.sh` for the manifests. The root `install.sh` is the exception: it is re-rendered from the default branch on every Package run. A re-run, or a CI run that published nothing new, therefore leaves the release alone. Replacing a published artefact means deleting it from R2 by hand first.
 
 The binaries carry no build clock either: `build.rs` stamps `SOURCE_DATE_EPOCH` when it is set, else the commit time of HEAD.
 

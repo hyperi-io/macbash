@@ -153,9 +153,11 @@ jobs:
           aws configure set aws_access_key_id "$R2_ACCESS_KEY_ID"
           aws configure set aws_secret_access_key "$R2_SECRET_ACCESS_KEY"
           aws configure set region auto
-          # Versioned paths are write-once: the formula and install.sh pin these
-          # bytes by sha256. The .sha256 goes up last, so it marks a full upload.
-          marker="macbash/${TAG}/macbash-linux-${ARCH}.sha256"
+          # Versioned paths are write-once: the formula pins the tarball by sha256.
+          # hyperi-ci has already written <tag>/macbash-linux-<arch>.sha256 for the
+          # raw binary and this job adds the tarball line, so the tarball, which
+          # only this job writes, is the marker and goes up last.
+          marker="macbash/${TAG}/macbash-linux-${ARCH}.tar.gz"
           published=$(aws s3api list-objects-v2 --endpoint-url "$R2_ENDPOINT" --bucket "$R2_BUCKET" \
             --prefix "$marker" --query "length(Contents || \`[]\`)" --output text)
           case "$published" in
@@ -165,9 +167,9 @@ jobs:
           esac
           for dest in "s3://${R2_BUCKET}/macbash/${TAG}/" "s3://${R2_BUCKET}/macbash/latest/"; do
             aws s3 cp --endpoint-url "$R2_ENDPOINT" \
-              "dist/macbash-linux-${ARCH}.tar.gz" "$dest"
-            aws s3 cp --endpoint-url "$R2_ENDPOINT" \
               "dist/macbash-linux-${ARCH}.sha256" "$dest"
+            aws s3 cp --endpoint-url "$R2_ENDPOINT" \
+              "dist/macbash-linux-${ARCH}.tar.gz" "$dest"
           done
 
   deb-rpm:
