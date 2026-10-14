@@ -1,3 +1,16 @@
+# Changelog
+
+Rendered by CI and committed back at the end of a release -- do not edit by
+hand. Release notes also appear on the GitHub Releases page, one per tag.
+
+## [1.5.11](https://github.com/hyperi-io/macbash/compare/v1.5.10...v1.5.11) (2026-10-14)
+
+### Bug Fixes
+
+* **ci:** accept from-head and bump on dispatch, like the rest of the fleet ([35e8c58](https://github.com/hyperi-io/macbash/commit/35e8c58f817ad5755a7bd59b22d3ddd6b2276ff8)), closes [hyperi-ci#88](https://github.com/hyperi-io/hyperi-ci/issues/88)
+* **ci:** mint the App token from the client ID, not the app ID ([#14](https://github.com/hyperi-io/macbash/issues/14)) ([2dca91a](https://github.com/hyperi-io/macbash/commit/2dca91a4c5d18b0606f3a7256d1bf6d6e054f0be)), closes [hyperi-io/hyperi-ci#100](https://github.com/hyperi-io/hyperi-ci/issues/100)
+* clear the sweep warnings and move YAML parsing to serde-saphyr ([#15](https://github.com/hyperi-io/macbash/issues/15)) ([3d39ab9](https://github.com/hyperi-io/macbash/commit/3d39ab9d6e7efc4d1812657d5fa4d31a609fa255))
+
 ## [1.5.9](https://github.com/hyperi-io/macbash/compare/v1.5.8...v1.5.9) (2026-05-27)
 
 
