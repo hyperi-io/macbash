@@ -10,12 +10,13 @@ the rendered files.
 | Platform | Status |
 |---|---|
 | Linux (amd64, arm64) | Supported - built and tested in CI |
-| macOS (amd64, arm64) | Templates ready; binary builds pending hyperi-ci darwin support |
-| **Windows (amd64)** | **EXPERIMENTAL - best effort.** Not in the formal CI test path. install.ps1 template ships, but Windows binaries are not yet produced by hyperi-ci. Planned phase 2 via `cargo-zigbuild` cross-compilation |
+| macOS (amd64, arm64) | Built by the Cross-build workflow and published with each release. Not tested in CI |
+| **Windows (amd64)** | **EXPERIMENTAL - best effort.** Not in the formal CI test path. Cross-build compiles it with `cargo-zigbuild` and publishes it beside the other platforms. There is no `windows-arm64` build |
 
-The Windows channel is provided so consumers can iterate, but it has
-no CI gate behind it - expect rough edges until the formal test path
-covers it.
+The Windows channel is provided so consumers can iterate. Nothing runs
+the Windows binary in CI, and `tests/install_ps1.rs` drives install.ps1
+under `pwsh` only on a host that has it - expect rough edges until the
+formal test path covers it.
 
 ## What it produces
 
@@ -39,7 +40,7 @@ sibling repos on the same org:
 
 These are populated per release by copying the rendered manifests in.
 
-Both detect OS/arch, download the matching binary from the configured R2 download base (or any HTTP host), and install to a system or user directory. `install.sh` refuses to install unless the binary matches a published SHA-256 for that exact asset: a missing sums file, a sums file without the asset, a mismatch or a download error all exit non-zero.
+Both detect OS/arch, download the matching binary from the configured R2 download base (or any HTTP host), and install to a system or user directory. Each refuses to install unless the binary matches a published SHA-256 for that exact asset: a missing sums file, a sums file without the asset, a mismatch or a download error all stop the install. `install.sh` exits non-zero. `install.ps1` throws, so run as a file it exits 1, and under `irm | iex` it leaves the caller's session open.
 
 Adding a new channel: drop a file into `packaging/templates/` or
 `packaging/templates-release/`, reference any `${PKG_*}` variable,
@@ -84,7 +85,7 @@ ${PKG_DOWNLOAD_BASE}/${VERSION}/${PKG_BINARY}-${os}-${arch}.sha256  # checked fi
 ${PKG_DOWNLOAD_BASE}/${VERSION}/checksums.sha256                    # fallback
 ```
 
-`install.sh` needs one of the two sums files to carry a `<sha256>  <asset>` line for the exact asset name. The first file that names the asset decides, so a mismatch there never falls through to the other.
+Each installer needs one of the two sums files to carry a `<sha256>  <asset>` line for the exact asset name, case included. On Windows the asset is the `.exe`, and the per-platform sums file drops that extension: `<binary>-windows-<arch>.sha256` lists the `.exe` and the `.zip`. The first file that names the asset decides, so a mismatch there never falls through to the other.
 
 Where `${VERSION}` is either `latest` or a `vX.Y.Z` tag, and `os` is
 one of `linux`, `darwin`, `windows`, and `arch` is `amd64` or `arm64`.

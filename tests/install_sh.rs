@@ -9,12 +9,10 @@
 // install.sh is a POSIX sh script driven by curl, so it is only tested on unix.
 #![cfg(unix)]
 
-use std::collections::HashMap;
-use std::io::{BufRead, BufReader, Write};
-use std::net::{TcpListener, TcpStream};
+mod common;
+
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
-use std::thread;
 use std::time::Duration;
 
 use assert_cmd::Command;
@@ -22,14 +20,11 @@ use assert_cmd::assert::Assert;
 use predicates::prelude::*;
 use tempfile::TempDir;
 
-const VERSION: &str = "v9.9.9";
+use common::{OTHER_SHA256, Release, VERSION, serve, which};
 
 /// The binary the test host publishes, and its SHA-256.
 const BINARY: &str = "#!/bin/sh\necho 'macbash 9.9.9 (test fixture)'\n";
 const BINARY_SHA256: &str = "7146ea8f8b6070cbac667c0a82b4f1262ea9520a5a6659ed36dcb6852ebc2753";
-
-/// The SHA-256 of `#!/bin/sh\necho 'not the published binary'\n`.
-const OTHER_SHA256: &str = "14b1f81dd672550d0055c981ed42e01aa0c33590e09460468f890cb4cfa734b9";
 
 /// Every asset install.sh can ask for, so the same release serves any unix host.
 const ASSETS: [&str; 4] = [
@@ -44,22 +39,11 @@ const BASE_TOOLS: [&str; 11] = [
     "awk", "chmod", "curl", "dirname", "head", "mkdir", "mktemp", "mv", "rm", "tr", "uname",
 ];
 
-/// What the download host serves under the version directory, keyed by file name.
-#[derive(Default)]
-struct Release {
-    files: HashMap<String, String>,
-}
-
 impl Release {
     fn with_binaries() -> Self {
         ASSETS.iter().fold(Self::default(), |release, asset| {
             release.file(asset, BINARY)
         })
-    }
-
-    fn file(mut self, name: &str, body: impl Into<String>) -> Self {
-        self.files.insert(name.to_string(), body.into());
-        self
     }
 
     /// A `<asset>.sha256` per asset, laid out the way the release pipeline writes them.
@@ -69,57 +53,6 @@ impl Release {
             release.file(&format!("{asset}.sha256"), body)
         })
     }
-}
-
-/// Serve `release` over HTTP on a loopback port and return the download base URL.
-fn serve(release: Release) -> String {
-    let listener = TcpListener::bind("127.0.0.1:0").expect("binding a loopback port");
-    let base = format!(
-        "http://{}",
-        listener.local_addr().expect("reading the bound port")
-    );
-    let files: HashMap<String, String> = release
-        .files
-        .into_iter()
-        .map(|(name, body)| (format!("/{VERSION}/{name}"), body))
-        .collect();
-    thread::spawn(move || {
-        for stream in listener.incoming().flatten() {
-            respond(stream, &files);
-        }
-    });
-    base
-}
-
-fn respond(mut stream: TcpStream, files: &HashMap<String, String>) {
-    // A client that connects and never sends a request must not wedge the server.
-    let _ = stream.set_read_timeout(Some(Duration::from_secs(10)));
-    let Ok(clone) = stream.try_clone() else {
-        return;
-    };
-    let mut reader = BufReader::new(clone);
-    let mut request_line = String::new();
-    if reader.read_line(&mut request_line).is_err() {
-        return;
-    }
-    loop {
-        let mut header = String::new();
-        match reader.read_line(&mut header) {
-            Ok(0) | Err(_) => break,
-            Ok(_) if header.trim_end().is_empty() => break,
-            Ok(_) => {}
-        }
-    }
-    let path = request_line.split_whitespace().nth(1).unwrap_or_default();
-    let (status, body) = match files.get(path) {
-        Some(body) => ("200 OK", body.as_str()),
-        None => ("404 Not Found", "not found\n"),
-    };
-    let response = format!(
-        "HTTP/1.1 {status}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
-        body.len()
-    );
-    let _ = stream.write_all(response.as_bytes());
 }
 
 /// install.sh rendered against `base`, as packaging/render.sh would, written into `dir`.
@@ -151,13 +84,6 @@ fn install_dir(dir: &TempDir) -> PathBuf {
 
 fn installed(dir: &TempDir) -> PathBuf {
     install_dir(dir).join("macbash")
-}
-
-fn which(tool: &str) -> Option<PathBuf> {
-    let path = std::env::var_os("PATH")?;
-    std::env::split_paths(&path)
-        .map(|dir| dir.join(tool))
-        .find(|candidate| candidate.is_file())
 }
 
 /// A PATH holding only the base tools plus `hashers`, linked from the real PATH.

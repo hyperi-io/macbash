@@ -66,17 +66,20 @@ checksums, `.deb` and `.rpm` via nfpm, the rendered Homebrew formula and
 Scoop manifest pushed into the sibling tap and bucket repos, and the static
 install scripts.
 
-## Why the chain uses workflow_run, not tag pushes
+## Why Cross-build has two triggers
 
-The obvious wiring -- trigger Cross-build on `push: tags: v*` -- does not
-fire. semantic-release commits the version bump with a `[skip ci]` suffix,
-and GitHub suppresses the tag-push event for those commits. Cross-build
-therefore listens for CI COMPLETION instead, and derives the tag itself by
-reading the most recent `v*` tag.
+A release starts Cross-build twice. hyperi-ci tags the released commit, which
+carries no `[skip ci]`, so the tag push starts a `push` run. It then commits
+`VERSION` and `CHANGELOG.md` back as an untagged
+`chore(release)` commit marked `[skip ci]`, and that mark only stops the commit
+starting another CI run. The completion of the CI run starts the `workflow_run`
+build, which derives the tag by reading the most recent `v*` tag.
 
-The tag-push trigger is still declared as a fallback for tags created outside
-semantic-release (manual tagging, a foreign release tool). Both paths land in
-the same `resolve-tag` job.
+Both land in the same `resolve-tag` job. Builds are queued per tag and platform,
+so the second one finds the first one's upload and writes nothing. Package
+follows only the `workflow_run` build, so a release packages once. A tag pushed
+outside hyperi-ci (manual tagging, a foreign release tool) starts the `push`
+run alone.
 
 Because Package runs off Cross-build's completion rather than a shared
 artefact handoff, its linux tarball jobs POLL R2 for the raw binary before
