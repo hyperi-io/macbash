@@ -1,6 +1,6 @@
 //  Project:   macbash
 //  File:      tests/common/mod.rs
-//  Purpose:   Shared helpers for the end-to-end CLI integration tests
+//  Purpose:   Shared helpers for the end-to-end CLI and installer integration tests
 //  Language:  Rust
 //
 //  License:   Apache-2.0
@@ -10,10 +10,21 @@
 // used by only one of them would otherwise be reported as dead code.
 #![allow(dead_code)]
 
+use std::collections::HashMap;
+use std::io::{BufRead, BufReader, Write};
+use std::net::{TcpListener, TcpStream};
 use std::path::{Path, PathBuf};
+use std::thread;
+use std::time::Duration;
 
 use assert_cmd::Command;
 use tempfile::TempDir;
+
+/// The release tag the loopback download host serves its files under.
+pub const VERSION: &str = "v9.9.9";
+
+/// A SHA-256 that no fixture binary has.
+pub const OTHER_SHA256: &str = "14b1f81dd672550d0055c981ed42e01aa0c33590e09460468f890cb4cfa734b9";
 
 /// A script with no findings at any severity -- the "already portable" case.
 pub const PORTABLE_SCRIPT: &str =
@@ -124,4 +135,76 @@ pub fn json_rule_ids(json: &str) -> Vec<String> {
 pub fn json_severity_count(json: &str, severity: &str) -> usize {
     json.matches(&format!("\"severity\": \"{severity}\""))
         .count()
+}
+
+/// What the download host serves under the version directory, keyed by file name.
+#[derive(Default)]
+pub struct Release {
+    files: HashMap<String, String>,
+}
+
+impl Release {
+    pub fn file(mut self, name: &str, body: impl Into<String>) -> Self {
+        self.files.insert(name.to_string(), body.into());
+        self
+    }
+}
+
+/// Serve `release` over HTTP on a loopback port and return the download base URL.
+pub fn serve(release: Release) -> String {
+    let listener = TcpListener::bind("127.0.0.1:0").expect("binding a loopback port");
+    let base = format!(
+        "http://{}",
+        listener.local_addr().expect("reading the bound port")
+    );
+    let files: HashMap<String, String> = release
+        .files
+        .into_iter()
+        .map(|(name, body)| (format!("/{VERSION}/{name}"), body))
+        .collect();
+    thread::spawn(move || {
+        for stream in listener.incoming().flatten() {
+            respond(stream, &files);
+        }
+    });
+    base
+}
+
+fn respond(mut stream: TcpStream, files: &HashMap<String, String>) {
+    // A client that connects and never sends a request must not wedge the server.
+    let _ = stream.set_read_timeout(Some(Duration::from_secs(10)));
+    let Ok(clone) = stream.try_clone() else {
+        return;
+    };
+    let mut reader = BufReader::new(clone);
+    let mut request_line = String::new();
+    if reader.read_line(&mut request_line).is_err() {
+        return;
+    }
+    loop {
+        let mut header = String::new();
+        match reader.read_line(&mut header) {
+            Ok(0) | Err(_) => break,
+            Ok(_) if header.trim_end().is_empty() => break,
+            Ok(_) => {}
+        }
+    }
+    let path = request_line.split_whitespace().nth(1).unwrap_or_default();
+    let (status, body) = match files.get(path) {
+        Some(body) => ("200 OK", body.as_str()),
+        None => ("404 Not Found", "not found\n"),
+    };
+    let response = format!(
+        "HTTP/1.1 {status}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+        body.len()
+    );
+    let _ = stream.write_all(response.as_bytes());
+}
+
+/// The first `tool` on PATH, if any.
+pub fn which(tool: &str) -> Option<PathBuf> {
+    let path = std::env::var_os("PATH")?;
+    std::env::split_paths(&path)
+        .map(|dir| dir.join(tool))
+        .find(|candidate| candidate.is_file())
 }

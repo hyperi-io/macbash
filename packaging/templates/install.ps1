@@ -27,6 +27,36 @@ $binary       = '${PKG_BINARY}'
 $downloadBase = '${PKG_DOWNLOAD_BASE}'
 $defaultDir   = "${PKG_WINDOWS_DEFAULT_DIR}"
 
+# Every failure throws: `exit` would close the caller's session under `irm | iex`.
+function Stop-Install([string]$Message) {
+    throw "install.ps1: $Message"
+}
+
+# True once $From is saved to $To. Any HTTP or network error returns false.
+function Save-Download([string]$From, [string]$To) {
+    try {
+        Invoke-WebRequest -UseBasicParsing -Uri $From -OutFile $To
+        return $true
+    } catch {
+        return $false
+    }
+}
+
+# The SHA-256 that sums file $Path records for exactly the file named $Name, or nothing
+# when that entry is missing, malformed or listed more than once.
+function Get-RecordedSha256([string]$Path, [string]$Name) {
+    $hashes = @()
+    foreach ($line in @(Get-Content -LiteralPath $Path)) {
+        $fields = @($line.Trim() -split '\s+')
+        if ($fields.Count -eq 2 -and ($fields[1] -replace '^\*', '') -ceq $Name) {
+            $hashes += $fields[0]
+        }
+    }
+    if ($hashes.Count -eq 1 -and $hashes[0] -match '^[0-9a-fA-F]{64}$') {
+        return $hashes[0].ToLowerInvariant()
+    }
+}
+
 Write-Host "[experimental] Windows install is not yet in the formal CI test path." -ForegroundColor Yellow
 
 if ($Dir) {
@@ -52,38 +82,40 @@ if ($Version -eq 'latest') {
     $versionPath = "v$Version"
 }
 
-$asset = "$binary-windows-$arch.exe"
-$url   = "$downloadBase/$versionPath/$asset"
-$sumsUrl = "$downloadBase/$versionPath/checksums.sha256"
+$asset        = "$binary-windows-$arch.exe"
+$releaseUrl   = "$downloadBase/$versionPath"
+$platformSums = "$binary-windows-$arch.sha256"
 
 $tmpDir = New-Item -ItemType Directory -Path (Join-Path $env:TEMP ("$binary-install-" + [Guid]::NewGuid().Guid))
 try {
     $tmpBinary = Join-Path $tmpDir "$binary.exe"
     Write-Host "Downloading $binary $versionPath (windows-$arch)..."
-    try {
-        Invoke-WebRequest -UseBasicParsing -Uri $url -OutFile $tmpBinary
-    } catch {
-        Write-Error "Download failed: $url`n$_"
-        exit 1
+    if (-not (Save-Download "$releaseUrl/$asset" $tmpBinary)) {
+        Stop-Install "download failed: $releaseUrl/$asset"
     }
 
-    # Checksum verify if available
-    $sumsFile = Join-Path $tmpDir 'checksums.sha256'
-    try {
-        Invoke-WebRequest -UseBasicParsing -Uri $sumsUrl -OutFile $sumsFile -ErrorAction Stop
-        $line = Select-String -Path $sumsFile -Pattern ([regex]::Escape($asset)) | Select-Object -First 1
-        if ($line) {
-            $expected = ($line.Line -split '\s+')[0]
-            $actual = (Get-FileHash -Algorithm SHA256 -Path $tmpBinary).Hash.ToLower()
-            if ($expected.ToLower() -ne $actual) {
-                Write-Error "Checksum mismatch for $asset`n  expected: $expected`n  actual:   $actual"
-                exit 1
-            }
-            Write-Host "Checksum verified."
+    # Every release publishes <binary>-windows-<arch>.sha256 (the .exe and the .zip), and
+    # checksums.sha256 is the older combined file. The first one that names this asset
+    # decides, so a mismatch never falls through.
+    $expected = $null
+    foreach ($sums in @($platformSums, 'checksums.sha256')) {
+        $sumsFile = Join-Path $tmpDir $sums
+        if (Save-Download "$releaseUrl/$sums" $sumsFile) {
+            $expected = Get-RecordedSha256 $sumsFile $asset
         }
-    } catch {
-        # checksums file is optional
+        if ($expected) {
+            break
+        }
     }
+    if (-not $expected) {
+        Stop-Install "no SHA-256 for $asset in $releaseUrl/$platformSums or $releaseUrl/checksums.sha256, refusing to install an unverified binary"
+    }
+
+    $actual = (Get-FileHash -Algorithm SHA256 -LiteralPath $tmpBinary).Hash.ToLowerInvariant()
+    if ($expected -cne $actual) {
+        Stop-Install "checksum mismatch for $asset, refusing to install (expected: $expected, actual: $actual)"
+    }
+    Write-Host "Checksum verified: sha256 $actual"
 
     if (-not (Test-Path $installDir)) {
         New-Item -ItemType Directory -Path $installDir -Force | Out-Null

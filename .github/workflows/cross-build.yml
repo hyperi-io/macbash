@@ -7,12 +7,12 @@
 # Copyright: (c) 2025-2026 HYPERI PTY LIMITED
 #
 # Trigger:   - workflow_run after CI succeeds on main in this repository, never
-#              for a pull request (most common path - fires when
-#              hyperi-ci's publish step tags vX.Y.Z; the [skip ci] suffix on
-#              the chore commit blocks the tag-push trigger so we use the
-#              ci-completion event instead).
-#            - on tag push (vX.Y.Z) -> fallback for tags pushed without the
-#              [skip ci] suffix (manual tagging, foreign release tools, etc.).
+#              for a pull request. The Package workflow follows this run only.
+#            - on tag push (vX.Y.Z). hyperi-ci tags the released commit, which
+#              carries no [skip ci], so every release starts this run as well as
+#              the workflow_run one. Builds are queued per tag, and the second
+#              finds the first one's upload and writes nothing. The [skip ci] is
+#              on the untagged chore(release) commit that follows the tag.
 #            - workflow_dispatch with `tag` input -> retroactive / out-of-band.
 #
 # Status:    Windows builds are EXPERIMENTAL - best effort, not in the formal
