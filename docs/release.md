@@ -83,6 +83,18 @@ artefact handoff, its linux tarball jobs POLL R2 for the raw binary before
 proceeding. That tolerates hyperi-ci's publish step being slower than the
 cross-build.
 
+## What may start a publish
+
+A `workflow_run` job holds the R2 and GitHub App secrets whatever started the upstream run, and CI also runs on pull requests from forks. So both `workflow_run` triggers filter on `branches: [main]`, and each `resolve-tag` job also requires the upstream run to have succeeded in this repository, from a push or a dispatch. A fork can name its branch `main`, which is why the repository check is there as well.
+
+A Cross-build that refuses a run concludes `skipped`, and Package only follows a `success`, so the refusal stops the whole chain.
+
+## Versioned paths are write-once
+
+The Homebrew formula and `install.sh` pin the bytes at `/<tag>/` by SHA-256, so nothing overwrites them. Each upload checks R2 for the file it writes last (its `.sha256`, or `<tag>/install.sh` for the manifests), and when that exists it writes nothing, `latest/` included. The root `install.sh` is the exception: it is re-rendered from the default branch on every Package run. A re-run, or a CI run that published nothing new, therefore leaves the release alone. Replacing a published artefact means deleting it from R2 by hand first.
+
+The binaries carry no build clock either: `build.rs` stamps `SOURCE_DATE_EPOCH` when it is set, else the commit time of HEAD.
+
 ## Versioning
 
 semantic-release owns the version, on its default conventional-commit rules:

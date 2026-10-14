@@ -6,7 +6,8 @@
 # License:   Apache-2.0
 # Copyright: (c) 2025-2026 HYPERI PTY LIMITED
 #
-# Trigger:   - workflow_run after CI succeeds (most common path - fires when
+# Trigger:   - workflow_run after CI succeeds on main in this repository, never
+#              for a pull request (most common path - fires when
 #              hyperi-ci's publish step tags vX.Y.Z; the [skip ci] suffix on
 #              the chore commit blocks the tag-push trigger so we use the
 #              ci-completion event instead).
@@ -26,6 +27,8 @@ name: Cross-build
   workflow_run:
     workflows: [CI]
     types: [completed]
+    # A fork's branch can also be called main, so resolve-tag checks the repository too.
+    branches: [main]
   workflow_dispatch:
     inputs:
       tag:
@@ -39,14 +42,21 @@ permissions:
 jobs:
   resolve-tag:
     # workflow_run gives us no inputs and `github.ref_name` resolves to the
-    # default branch, so derive the tag explicitly. Skips when CI failed or
-    # when CI didn't produce a new tag (non-publish run).
+    # default branch, so derive the tag explicitly.
+    #
+    # A workflow_run job holds the publish secrets whatever started the CI run,
+    # and CI also runs on fork pull requests. Only a successful CI run on main in
+    # this repository, from a push or a maintainer's dispatch, may start a build.
     name: Resolve tag to build
     runs-on: ubuntu-latest
     if: >-
       ${{ github.event_name == 'workflow_dispatch'
           || github.event_name == 'push'
-          || github.event.workflow_run.conclusion == 'success' }}
+          || (github.event.workflow_run.conclusion == 'success'
+              && github.event.workflow_run.head_branch == 'main'
+              && github.event.workflow_run.head_repository.full_name == github.repository
+              && (github.event.workflow_run.event == 'push'
+                  || github.event.workflow_run.event == 'workflow_dispatch')) }}
     outputs:
       tag: ${{ steps.pick.outputs.tag }}
     steps:
@@ -75,11 +85,9 @@ jobs:
               tag="$REF_NAME"
               ;;
             workflow_run)
-              # CI completed successfully. Pick the most recent v-tag - if
-              # CI was a publish run it will have created vX.Y.Z; if it was a
-              # validate-only run the latest tag is unchanged and rebuilding
-              # is idempotent (same source -> same bytes overwrite the same R2
-              # paths).
+              # Pick the most recent v-tag. A publish run has just created it.
+              # After any other run it is already published, and the upload
+              # step finds it there and writes nothing.
               git fetch --tags --force origin
               tag=$(git tag --sort=-creatordate --list 'v*' | head -1)
               if [ -z "$tag" ]; then
@@ -97,6 +105,11 @@ jobs:
     needs: resolve-tag
     if: ${{ needs.resolve-tag.outputs.tag != '' }}
     runs-on: ${{ matrix.runner }}
+    # The tag push and the CI completion can both build one tag. Queued rather
+    # than raced, the second build finds the first one's upload and writes nothing.
+    concurrency:
+      group: cross-build-${{ needs.resolve-tag.outputs.tag }}-${{ matrix.os_arch }}
+      cancel-in-progress: false
     strategy:
       fail-fast: false
       matrix:
@@ -256,14 +269,27 @@ jobs:
           R2_ENDPOINT: https://98d20454e2af7a9397ad9366a1641659.r2.cloudflarestorage.com
           R2_BUCKET: bin-repo
           TAG: ${{ steps.ver.outputs.tag }}
+          OS_ARCH: ${{ matrix.os_arch }}
         shell: bash
         run: |
           set -euo pipefail
-          dest_versioned="s3://${R2_BUCKET}/macbash/${TAG}/"
-          dest_latest="s3://${R2_BUCKET}/macbash/latest/"
-          for f in dist/*; do
-            for dest in "$dest_versioned" "$dest_latest"; do
-              aws s3 cp --endpoint-url "$R2_ENDPOINT" "$f" "$dest"
+          # Versioned paths are write-once: the formula and install.sh pin these
+          # bytes by sha256. The .sha256 goes up last, so it marks a full upload.
+          sums="dist/macbash-${OS_ARCH}.sha256"
+          marker="macbash/${TAG}/macbash-${OS_ARCH}.sha256"
+          published=$(aws s3api list-objects-v2 --endpoint-url "$R2_ENDPOINT" --bucket "$R2_BUCKET" \
+            --prefix "$marker" --query "length(Contents || \`[]\`)" --output text)
+          case "$published" in
+            0) ;;
+            1) echo "::notice::${marker} already exists and versioned artefacts are write-once, so nothing was uploaded"; exit 0 ;;
+            *) echo "::error::unexpected R2 listing for ${marker}: ${published}"; exit 1 ;;
+          esac
+          for dest in "s3://${R2_BUCKET}/macbash/${TAG}/" "s3://${R2_BUCKET}/macbash/latest/"; do
+            for f in dist/*; do
+              if [ "$f" != "$sums" ]; then
+                aws s3 cp --endpoint-url "$R2_ENDPOINT" "$f" "$dest"
+              fi
             done
+            aws s3 cp --endpoint-url "$R2_ENDPOINT" "$sums" "$dest"
           done
           echo "Published to https://downloads.hyperi.io/macbash/${TAG}/"

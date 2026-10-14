@@ -50,7 +50,8 @@ runs:
       env:
         MACBASH_VERSION: ${{ inputs.version }}
       # Risk accepted: install.sh comes over TLS from the host that serves the
-      # binary, so fetching it first adds no integrity check; #10 tracks one.
+      # binary. It refuses any binary without a matching published SHA-256, but
+      # that sums file comes from the same host and nothing is signed.
       # nosemgrep: yaml.github-actions.security.gha-curl-pipe-shell.gha-curl-pipe-shell
       run: |
         set -euo pipefail
