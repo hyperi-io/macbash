@@ -3,6 +3,14 @@
 Rendered by CI and committed back at the end of a release -- do not edit by
 hand. Release notes also appear on the GitHub Releases page, one per tag.
 
+## [1.5.12](https://github.com/hyperi-io/macbash/compare/v1.5.11...v1.5.12) (2026-10-14)
+
+### Bug Fixes
+
+* key the linux tarball upload on the tarball ([#17](https://github.com/hyperi-io/macbash/issues/17)) ([7ee41d7](https://github.com/hyperi-io/macbash/commit/7ee41d7ef4fccfafcc69e2f87d78cf6f58f0108e))
+* make install.ps1 fail closed on checksums ([#18](https://github.com/hyperi-io/macbash/issues/18)) ([1b4501b](https://github.com/hyperi-io/macbash/commit/1b4501bb8cfd76b86f88cea8bc90ed81d03ecf7b))
+* refuse unverified installs and fork publishes ([#16](https://github.com/hyperi-io/macbash/issues/16)) ([79f68a8](https://github.com/hyperi-io/macbash/commit/79f68a8c6bfa5c7c29ad2397a608c0bd3ee5ecb6)), closes [#10](https://github.com/hyperi-io/macbash/issues/10)
+
 ## [1.5.11](https://github.com/hyperi-io/macbash/compare/v1.5.10...v1.5.11) (2026-10-14)
 
 ### Bug Fixes
