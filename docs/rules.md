@@ -214,7 +214,7 @@ scripts.
 
 Verify any rule change with:
 
-```console
-$ cargo test
-$ cargo run -- --severity info tests/fixtures/deploy-script.sh
+```sh
+cargo test
+cargo run -- --severity info tests/fixtures/deploy-script.sh
 ```

@@ -79,7 +79,7 @@ framework changes required.
 
 The rendered installers expect binaries at this URL layout:
 
-```
+```text
 ${PKG_DOWNLOAD_BASE}/${VERSION}/${PKG_BINARY}-${os}-${arch}        # unix
 ${PKG_DOWNLOAD_BASE}/${VERSION}/${PKG_BINARY}-${os}-${arch}.exe    # windows
 ${PKG_DOWNLOAD_BASE}/${VERSION}/checksums.sha256                   # optional
