@@ -33,8 +33,9 @@ pub enum LoadError {
     #[error("parsing YAML from {source_name}")]
     Parse {
         source_name: String,
+        // Boxed: serde_saphyr::Error alone would make every Result<_, LoadError> 136+ bytes.
         #[source]
-        source: serde_saphyr::Error,
+        source: Box<serde_saphyr::Error>,
     },
     #[error("invalid rule {id} in {source_name}: {reason}")]
     Invalid {
@@ -72,11 +73,27 @@ pub fn load_from_file(path: &Path) -> Result<RuleSet, LoadError> {
     parse_ruleset(&data, &path.display().to_string())
 }
 
+/// Parser options for every rule pack, builtin and custom alike.
+fn yaml_options() -> serde_saphyr::Options {
+    serde_saphyr::options! {
+        // Unemitted comments sit outside the 32-event comment budget, so a long
+        // comment block in a rule pack cannot fail the parse.
+        emit_comments: false,
+        // Only `true` and `false` are booleans; YAML 1.1 `yes`/`no`/`on`/`off` are refused.
+        strict_booleans: true,
+        // The error carries its line and column; the source name is LoadError's.
+        with_snippet: false,
+    }
+}
+
 fn parse_ruleset(bytes: &[u8], source_name: &str) -> Result<RuleSet, LoadError> {
-    let mut rs: RuleSet = serde_saphyr::from_slice(bytes).map_err(|e| LoadError::Parse {
-        source_name: source_name.to_string(),
-        source: e,
-    })?;
+    let mut rs: RuleSet =
+        serde_saphyr::from_slice_with_options(bytes, yaml_options()).map_err(|e| {
+            LoadError::Parse {
+                source_name: source_name.to_string(),
+                source: Box::new(e),
+            }
+        })?;
     for r in &mut rs.rules {
         validate_rule(r, source_name)?;
     }
@@ -244,6 +261,20 @@ mod tests {
         assert_eq!(rs.rules.len(), 1);
         assert_eq!(rs.rules[0].id, "test-rule");
         assert_eq!(rs.rules[0].severity, Severity::Warning);
+    }
+
+    #[test]
+    fn load_from_file_accepts_a_comment_block_past_the_comment_budget() {
+        // Comments the parser holds while it decides whether `rules:` opens an
+        // indentless sequence; 40 is past serde-saphyr's 32-event buffer.
+        let notes: String = (0..40).map(|i| format!("# note {i}\n")).collect();
+        let body = format!(
+            "version: \"1.0\"\nrules:\n{notes}- id: commented\n  name: Commented\n  pattern: 'x'\n"
+        );
+        let dir = write_temp("commented.yaml", &body);
+        let rs = load_from_file(&dir.path().join("commented.yaml")).unwrap();
+        assert_eq!(rs.rules.len(), 1);
+        assert_eq!(rs.rules[0].id, "commented");
     }
 
     #[test]

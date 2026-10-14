@@ -29,7 +29,6 @@ build:
   rust:
     features: all
     targets: []
-publish:
+release:
   enabled: true
-  target: oss
   channel: release
