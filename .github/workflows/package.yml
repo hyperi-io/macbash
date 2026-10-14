@@ -8,7 +8,8 @@
 # License:   Apache-2.0
 # Copyright: (c) 2025-2026 HYPERI PTY LIMITED
 #
-# Trigger:   - workflow_run after Cross-build succeeds (the standard path)
+# Trigger:   - workflow_run after Cross-build succeeds on main in this
+#              repository (the standard path)
 #            - workflow_dispatch with tag input (manual fallback)
 #
 #            On workflow_run the tag is derived from the most recent v* tag,
@@ -25,6 +26,8 @@ name: Package
   workflow_run:
     workflows: [Cross-build]
     types: [completed]
+    # A fork's branch can also be called main, so resolve-tag checks the repository too.
+    branches: [main]
   workflow_dispatch:
     inputs:
       tag:
@@ -44,11 +47,18 @@ jobs:
   resolve-tag:
     # workflow_run gives us no inputs - derive the tag from the latest v* tag,
     # same pattern as cross-build.yml's resolve-tag job.
+    #
+    # Same gate as cross-build.yml. A Cross-build whose own gate refused a fork's
+    # CI run concludes "skipped", never "success", so it cannot start this one.
     name: Resolve tag to package
     runs-on: ubuntu-latest
     if: >-
       ${{ github.event_name == 'workflow_dispatch'
-          || github.event.workflow_run.conclusion == 'success' }}
+          || (github.event.workflow_run.conclusion == 'success'
+              && github.event.workflow_run.head_branch == 'main'
+              && github.event.workflow_run.head_repository.full_name == github.repository
+              && (github.event.workflow_run.event == 'workflow_run'
+                  || github.event.workflow_run.event == 'workflow_dispatch')) }}
     outputs:
       tag: ${{ steps.pick.outputs.tag }}
     steps:
@@ -136,17 +146,28 @@ jobs:
         env:
           R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
           R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          ARCH: ${{ matrix.arch }}
         shell: bash
         run: |
           set -euo pipefail
           aws configure set aws_access_key_id "$R2_ACCESS_KEY_ID"
           aws configure set aws_secret_access_key "$R2_SECRET_ACCESS_KEY"
           aws configure set region auto
+          # Versioned paths are write-once: the formula and install.sh pin these
+          # bytes by sha256. The .sha256 goes up last, so it marks a full upload.
+          marker="macbash/${TAG}/macbash-linux-${ARCH}.sha256"
+          published=$(aws s3api list-objects-v2 --endpoint-url "$R2_ENDPOINT" --bucket "$R2_BUCKET" \
+            --prefix "$marker" --query "length(Contents || \`[]\`)" --output text)
+          case "$published" in
+            0) ;;
+            1) echo "::notice::${marker} already exists and versioned artefacts are write-once, so nothing was uploaded"; exit 0 ;;
+            *) echo "::error::unexpected R2 listing for ${marker}: ${published}"; exit 1 ;;
+          esac
           for dest in "s3://${R2_BUCKET}/macbash/${TAG}/" "s3://${R2_BUCKET}/macbash/latest/"; do
             aws s3 cp --endpoint-url "$R2_ENDPOINT" \
-              "dist/macbash-linux-${{ matrix.arch }}.tar.gz" "$dest"
+              "dist/macbash-linux-${ARCH}.tar.gz" "$dest"
             aws s3 cp --endpoint-url "$R2_ENDPOINT" \
-              "dist/macbash-linux-${{ matrix.arch }}.sha256" "$dest"
+              "dist/macbash-linux-${ARCH}.sha256" "$dest"
           done
 
   deb-rpm:
@@ -200,23 +221,37 @@ jobs:
           nfpm package -f packaging/dist/release/nfpm.yaml -p deb -t out/
           nfpm package -f packaging/dist/release/nfpm.yaml -p rpm -t out/
           ls -la out
-          # Per-arch sha for the packages
-          ( cd out && shasum -a 256 ./* ) > "out/macbash-linux-${{ matrix.arch }}.packages.sha256"
+          # Per-arch sha for the packages. Named, not ./*, which would list the sums file itself.
+          ( cd out && shasum -a 256 ./*.deb ./*.rpm ) > "out/macbash-linux-${{ matrix.arch }}.packages.sha256"
 
       - name: Upload to R2
         env:
           R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
           R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          ARCH: ${{ matrix.arch }}
         shell: bash
         run: |
           set -euo pipefail
           aws configure set aws_access_key_id "$R2_ACCESS_KEY_ID"
           aws configure set aws_secret_access_key "$R2_SECRET_ACCESS_KEY"
           aws configure set region auto
+          # Write-once, as for the tarballs. The packages .sha256 goes up last.
+          sums="out/macbash-linux-${ARCH}.packages.sha256"
+          marker="macbash/${TAG}/macbash-linux-${ARCH}.packages.sha256"
+          published=$(aws s3api list-objects-v2 --endpoint-url "$R2_ENDPOINT" --bucket "$R2_BUCKET" \
+            --prefix "$marker" --query "length(Contents || \`[]\`)" --output text)
+          case "$published" in
+            0) ;;
+            1) echo "::notice::${marker} already exists and versioned artefacts are write-once, so nothing was uploaded"; exit 0 ;;
+            *) echo "::error::unexpected R2 listing for ${marker}: ${published}"; exit 1 ;;
+          esac
           for dest in "s3://${R2_BUCKET}/macbash/${TAG}/" "s3://${R2_BUCKET}/macbash/latest/"; do
             for f in out/*; do
-              aws s3 cp --endpoint-url "$R2_ENDPOINT" "$f" "$dest"
+              if [ "$f" != "$sums" ]; then
+                aws s3 cp --endpoint-url "$R2_ENDPOINT" "$f" "$dest"
+              fi
             done
+            aws s3 cp --endpoint-url "$R2_ENDPOINT" "$sums" "$dest"
           done
 
   manifests:
@@ -255,27 +290,40 @@ jobs:
           aws configure set aws_secret_access_key "$R2_SECRET_ACCESS_KEY"
           aws configure set region auto
 
+          # Use text/plain content-type so curl/iex render in browser too.
+          put_script() {
+            local ct="text/x-shellscript"
+            case "$1" in *.ps1) ct="text/plain" ;; esac
+            aws s3 cp --endpoint-url "$R2_ENDPOINT" --content-type "$ct" \
+              "packaging/dist/$1" "$2"
+          }
+
+          # Static install scripts at /macbash/install.sh (curl-pipe target),
+          # always re-rendered from the default branch.
+          for f in install.sh install.ps1 uninstall.sh uninstall.ps1; do
+            put_script "$f" "s3://${R2_BUCKET}/macbash/$f"
+          done
+
+          # The per-version copies are write-once, as for the binaries: pinning a
+          # tag-specific install.sh URL gets the script that shipped with that
+          # binary. <tag>/install.sh goes up last, so it marks a full upload.
+          marker="macbash/${TAG}/install.sh"
+          published=$(aws s3api list-objects-v2 --endpoint-url "$R2_ENDPOINT" --bucket "$R2_BUCKET" \
+            --prefix "$marker" --query "length(Contents || \`[]\`)" --output text)
+          case "$published" in
+            0) ;;
+            1) echo "::notice::${marker} already exists and versioned artefacts are write-once, so only the root install scripts were uploaded"; exit 0 ;;
+            *) echo "::error::unexpected R2 listing for ${marker}: ${published}"; exit 1 ;;
+          esac
+
           # Per-version manifests under /<tag>/manifests/ + /latest/manifests/
           for dest in "s3://${R2_BUCKET}/macbash/${TAG}/manifests/" \
                       "s3://${R2_BUCKET}/macbash/latest/manifests/"; do
             aws s3 cp --recursive --endpoint-url "$R2_ENDPOINT" \
               packaging/dist/release/ "$dest"
           done
-
-          # Static install scripts at /macbash/install.sh (curl-pipe target).
-          # Also mirror to per-version path for reproducibility - pinning a
-          # tag-specific install.sh URL lets users install a known-good copy
-          # of the script that downloaded the same-version binary.
-          for f in install.sh install.ps1 uninstall.sh uninstall.ps1; do
-            for dest in "s3://${R2_BUCKET}/macbash/$f" \
-                        "s3://${R2_BUCKET}/macbash/${TAG}/$f"; do
-              # Use text/plain content-type so curl/iex render in browser too.
-              ct="text/x-shellscript"
-              case "$f" in *.ps1) ct="text/plain" ;; esac
-              aws s3 cp --endpoint-url "$R2_ENDPOINT" \
-                --content-type "$ct" \
-                "packaging/dist/$f" "$dest"
-            done
+          for f in uninstall.ps1 uninstall.sh install.ps1 install.sh; do
+            put_script "$f" "s3://${R2_BUCKET}/macbash/${TAG}/$f"
           done
 
   publish-tap-bucket:

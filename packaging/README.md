@@ -39,9 +39,7 @@ sibling repos on the same org:
 
 These are populated per release by copying the rendered manifests in.
 
-Both detect OS/arch, download the matching binary from the configured
-R2 download base (or any HTTP host), verify a SHA-256 checksum if
-available, and install to a system or user directory.
+Both detect OS/arch, download the matching binary from the configured R2 download base (or any HTTP host), and install to a system or user directory. `install.sh` refuses to install unless the binary matches a published SHA-256 for that exact asset: a missing sums file, a sums file without the asset, a mismatch or a download error all exit non-zero.
 
 Adding a new channel: drop a file into `packaging/templates/` or
 `packaging/templates-release/`, reference any `${PKG_*}` variable,
@@ -80,10 +78,13 @@ framework changes required.
 The rendered installers expect binaries at this URL layout:
 
 ```text
-${PKG_DOWNLOAD_BASE}/${VERSION}/${PKG_BINARY}-${os}-${arch}        # unix
-${PKG_DOWNLOAD_BASE}/${VERSION}/${PKG_BINARY}-${os}-${arch}.exe    # windows
-${PKG_DOWNLOAD_BASE}/${VERSION}/checksums.sha256                   # optional
+${PKG_DOWNLOAD_BASE}/${VERSION}/${PKG_BINARY}-${os}-${arch}         # unix
+${PKG_DOWNLOAD_BASE}/${VERSION}/${PKG_BINARY}-${os}-${arch}.exe     # windows
+${PKG_DOWNLOAD_BASE}/${VERSION}/${PKG_BINARY}-${os}-${arch}.sha256  # checked first
+${PKG_DOWNLOAD_BASE}/${VERSION}/checksums.sha256                    # fallback
 ```
+
+`install.sh` needs one of the two sums files to carry a `<sha256>  <asset>` line for the exact asset name. The first file that names the asset decides, so a mismatch there never falls through to the other.
 
 Where `${VERSION}` is either `latest` or a `vX.Y.Z` tag, and `os` is
 one of `linux`, `darwin`, `windows`, and `arch` is `amd64` or `arm64`.

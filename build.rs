@@ -7,29 +7,39 @@
 //  Copyright: (c) 2025-2026 HYPERI PTY LIMITED
 
 use std::process::Command;
-use std::time::{SystemTime, UNIX_EPOCH};
 
 fn main() {
-    let sha = Command::new("git")
-        .args(["rev-parse", "HEAD"])
+    let sha = git(&["rev-parse", "HEAD"]).unwrap_or_else(|| "unknown".into());
+    println!("cargo:rustc-env=VERGEN_GIT_SHA={sha}");
+
+    // Never the clock: the same commit must always build the same bytes.
+    let built = build_epoch()
+        .map(rfc3339_utc)
+        .unwrap_or_else(|| "unknown".into());
+    println!("cargo:rustc-env=VERGEN_BUILD_TIMESTAMP={built}");
+
+    println!("cargo:rerun-if-env-changed=SOURCE_DATE_EPOCH");
+    println!("cargo:rerun-if-changed=.git/HEAD");
+    println!("cargo:rerun-if-changed=.git/refs");
+}
+
+fn git(args: &[&str]) -> Option<String> {
+    Command::new("git")
+        .args(args)
         .output()
         .ok()
         .filter(|o| o.status.success())
         .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
-        .unwrap_or_else(|| "unknown".into());
-    println!("cargo:rustc-env=VERGEN_GIT_SHA={sha}");
+}
 
-    let secs = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_secs())
-        .unwrap_or(0);
-    println!(
-        "cargo:rustc-env=VERGEN_BUILD_TIMESTAMP={}",
-        rfc3339_utc(secs)
-    );
-
-    println!("cargo:rerun-if-changed=.git/HEAD");
-    println!("cargo:rerun-if-changed=.git/refs");
+/// SOURCE_DATE_EPOCH when the builder sets it, else the commit time of HEAD.
+fn build_epoch() -> Option<u64> {
+    match std::env::var("SOURCE_DATE_EPOCH") {
+        Ok(raw) => Some(raw.trim().parse().unwrap_or_else(|_| {
+            panic!("SOURCE_DATE_EPOCH must be whole seconds since the Unix epoch, got {raw:?}")
+        })),
+        Err(_) => git(&["log", "-1", "--format=%ct", "HEAD"])?.parse().ok(),
+    }
 }
 
 fn rfc3339_utc(secs: u64) -> String {
