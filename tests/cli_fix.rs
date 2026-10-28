@@ -216,3 +216,37 @@ fn severity_filter_narrows_what_fix_mode_touches() {
         "--severity info should fix at least as much as --severity error"
     );
 }
+
+#[cfg(unix)]
+#[test]
+fn output_file_keeps_the_input_permissions() {
+    use std::os::unix::fs::PermissionsExt;
+    let dir = tempfile::tempdir().unwrap();
+    let script = copy_fixture(&dir, "sample-linux.sh");
+    std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let out = dir.path().join("fixed").join("out.sh");
+
+    macbash().arg("-o").arg(&out).arg(&script).assert().code(1);
+
+    let mode = std::fs::metadata(&out).unwrap().permissions().mode() & 0o777;
+    assert_eq!(mode, 0o755, "-o must keep the executable bit");
+}
+
+#[test]
+fn write_mode_leaves_untouched_bytes_alone() {
+    let dir = tempfile::tempdir().unwrap();
+    for (name, body) in [
+        ("crlf.sh", "#!/usr/bin/env bash\r\necho hi\r\n"),
+        ("no-newline.sh", "#!/usr/bin/env bash\necho hi"),
+        ("empty.sh", ""),
+    ] {
+        let script = write_file(&dir, name, body);
+        macbash()
+            .arg("-w")
+            .arg(&script)
+            .assert()
+            .code(0)
+            .stdout(predicate::str::contains("(0 fixes applied, 0 unfixable)"));
+        assert_eq!(std::fs::read_to_string(&script).unwrap(), body, "{name}");
+    }
+}

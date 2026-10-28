@@ -176,3 +176,31 @@ fn help_lists_the_output_modes_and_exits_zero() {
         .stdout(predicate::str::contains("-o, --output"))
         .stdout(predicate::str::contains("Exit Codes:"));
 }
+
+#[test]
+fn unreadable_file_does_not_hide_the_other_files_results() {
+    let dir = tempfile::tempdir().unwrap();
+    let bad = dir.path().join("latin1.sh");
+    std::fs::write(&bad, b"echo caf\xe9\n").unwrap();
+    macbash()
+        .arg(&bad)
+        .arg(fixture("sample-linux.sh"))
+        .assert()
+        .code(1)
+        .stderr(predicate::str::contains("Error: reading"))
+        .stderr(predicate::str::contains("latin1.sh"))
+        .stdout(predicate::str::contains("sed-inplace-no-backup"));
+}
+
+#[test]
+fn only_unreadable_files_abort_the_run() {
+    let dir = tempfile::tempdir().unwrap();
+    let bad = dir.path().join("latin1.sh");
+    std::fs::write(&bad, b"echo caf\xe9\n").unwrap();
+    macbash()
+        .arg(&bad)
+        .assert()
+        .code(1)
+        .stderr(predicate::str::contains("Error: scanning files: reading"))
+        .stdout(predicate::str::is_empty());
+}

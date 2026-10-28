@@ -157,13 +157,23 @@ fn run_inner(mut cli: Cli) -> Result<ExitCode> {
     // just prints "loading rules: loading custom rules: ...".
     let rules = load_rules(cli.config.as_deref())?;
     let scanner = Scanner::new(&rules).context("compiling rule patterns")?;
-    let mut matches = scanner
-        .scan_files(cli.files.iter().map(PathBuf::as_path))
-        .context("scanning files")?;
-    matches = filter_by_severity(matches, min_severity, &rules);
+    let mut report = scanner.scan_files(cli.files.iter().map(PathBuf::as_path));
+    // One bad file must not hide the others' results. The run only aborts when
+    // nothing at all could be read, and any unreadable file still exits 1.
+    let read_failed = !report.failures.is_empty();
+    if report.readable.is_empty() && read_failed {
+        let first = report.failures.swap_remove(0);
+        return Err(anyhow::Error::new(first).context("scanning files"));
+    }
+    for failure in &report.failures {
+        eprintln!("Error: {}", error_chain(failure));
+    }
+    cli.files = report.readable;
+    let matches = filter_by_severity(report.matches, min_severity, &rules);
 
     if cli.write || cli.output.is_some() {
-        return run_fix(&cli, &matches, &rules);
+        let code = run_fix(&cli, &matches, &rules)?;
+        return Ok(if read_failed { ExitCode::from(1) } else { code });
     }
 
     let stdout = std::io::stdout();
@@ -174,7 +184,7 @@ fn run_inner(mut cli: Cli) -> Result<ExitCode> {
         "json" => formatter.json(&matches)?,
         _ => formatter.text(&matches)?,
     }
-    if has_errors(&matches, &rules) {
+    if read_failed || has_errors(&matches, &rules) {
         return Ok(ExitCode::from(1));
     }
     Ok(ExitCode::SUCCESS)
@@ -238,7 +248,7 @@ fn run_fix(cli: &Cli, matches: &[MatchHit], rules: &RuleSet) -> Result<ExitCode>
             }
             continue;
         }
-        write_output(&out_path, &outcome.content)
+        write_output(&out_path, &outcome.content, input)
             .with_context(|| format!("writing {}", out_path.display()))?;
         match (outcome.fixed_count, outcome.unfixed_count) {
             (f, u) if f > 0 && u > 0 => println!(
@@ -309,13 +319,28 @@ fn same_file(input: &Path, out: &Path) -> bool {
     }
 }
 
-fn write_output(path: &Path, content: &str) -> std::io::Result<()> {
+/// Write `content` to `path`, giving it the permission bits of `mode_from`
+/// (the input script) so `-o` keeps a script executable the way `-w` does.
+fn write_output(path: &Path, content: &str, mode_from: &Path) -> std::io::Result<()> {
     if let Some(parent) = path.parent()
         && !parent.as_os_str().is_empty()
     {
         std::fs::create_dir_all(parent)?;
     }
-    std::fs::write(path, content)
+    std::fs::write(path, content)?;
+    std::fs::set_permissions(path, std::fs::metadata(mode_from)?.permissions())
+}
+
+/// `err: cause: cause`, the same shape anyhow prints with `{:#}`.
+fn error_chain(err: &dyn std::error::Error) -> String {
+    let mut out = err.to_string();
+    let mut cur = err.source();
+    while let Some(c) = cur {
+        out.push_str(": ");
+        out.push_str(&c.to_string());
+        cur = c.source();
+    }
+    out
 }
 
 fn load_rules(custom: Option<&Path>) -> Result<RuleSet> {
