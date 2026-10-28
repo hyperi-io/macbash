@@ -63,7 +63,7 @@ impl<'a, W: Write> Formatter<'a, W> {
                 };
                 write!(self.w, "  ")?;
                 self.write_styled(gray(), &format!("{}", m.line))?;
-                write!(self.w, ":{}:{}: ", m.line, m.column)?;
+                write!(self.w, ":{}: ", m.column)?;
                 self.write_styled(severity_style(severity), severity_str)?;
                 writeln!(self.w, " [{}]", m.rule_id)?;
                 if let Some(r) = rule {

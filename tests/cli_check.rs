@@ -240,3 +240,15 @@ fn version_short_flag_matches_the_long_flag() {
         stdout_of(macbash().arg("--version"))
     );
 }
+
+#[test]
+fn text_output_prefix_is_line_then_column_once() {
+    let dir = tempfile::tempdir().unwrap();
+    write_file(&dir, "probe.sh", "#!/usr/bin/env bash\necho -e \"hi\"\n");
+    macbash()
+        .current_dir(dir.path())
+        .arg("probe.sh")
+        .assert()
+        .code(0)
+        .stdout(predicate::str::is_match(r"(?m)^  2:\d+: (ERROR|WARNING|INFO) ").unwrap());
+}

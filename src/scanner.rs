@@ -7,7 +7,7 @@
 //  Copyright: (c) 2025-2026 HYPERI PTY LIMITED
 
 use std::collections::BTreeMap;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 
 use regex::Regex;
@@ -183,16 +183,31 @@ impl Scanner {
         out
     }
 
-    pub fn scan_files<'a>(
-        &self,
-        paths: impl IntoIterator<Item = &'a Path>,
-    ) -> Result<Vec<MatchHit>, ScanError> {
-        let mut all = Vec::new();
+    /// Scan every path, keeping the findings from the files that could be
+    /// read. A file that cannot be read (missing, a directory, not UTF-8) is
+    /// recorded in `failures` instead of discarding the other files' results.
+    pub fn scan_files<'a>(&self, paths: impl IntoIterator<Item = &'a Path>) -> ScanReport {
+        let mut report = ScanReport::default();
         for p in paths {
-            all.extend(self.scan_file(p)?);
+            match self.scan_file(p) {
+                Ok(hits) => {
+                    report.matches.extend(hits);
+                    report.readable.push(p.to_path_buf());
+                }
+                Err(e) => report.failures.push(e),
+            }
         }
-        Ok(all)
+        report
     }
+}
+
+/// Result of scanning several files: findings, the files that were read, and
+/// the files that could not be.
+#[derive(Debug, Default)]
+pub struct ScanReport {
+    pub matches: Vec<MatchHit>,
+    pub readable: Vec<PathBuf>,
+    pub failures: Vec<ScanError>,
 }
 
 /// Filter matches to those at or above `min`. The Go implementation uses

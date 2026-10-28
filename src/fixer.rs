@@ -82,23 +82,27 @@ impl Fixer {
             v.sort_by_key(|m| std::cmp::Reverse(m.column));
         }
 
-        let mut out_lines: Vec<String> = Vec::new();
         let mut outcome = FixOutcome::default();
-        let lines: Vec<&str> = text.lines().collect();
-        for (idx, line) in lines.iter().enumerate() {
+        let mut content = String::with_capacity(text.len());
+        // Each line keeps its own terminator (LF, CRLF or none on the last
+        // line), so bytes a fix did not touch are written back unchanged.
+        for (idx, raw) in text.split_inclusive('\n').enumerate() {
             let lineno = idx + 1;
+            let body = raw.strip_suffix('\n').unwrap_or(raw);
+            let body = body.strip_suffix('\r').unwrap_or(body);
+            let terminator = &raw[body.len()..];
             if let Some(line_matches) = by_line.get(&lineno) {
-                let (fixed, fixes, unfixed) = self.fix_line(line, line_matches);
+                let (fixed, fixes, unfixed) = self.fix_line(body, line_matches);
                 outcome.fixed_count += fixes.len();
                 outcome.unfixed_count += unfixed;
                 outcome.fixes.extend(fixes);
-                out_lines.push(fixed);
+                content.push_str(&fixed);
             } else {
-                out_lines.push((*line).to_string());
+                content.push_str(body);
             }
+            content.push_str(terminator);
         }
-        outcome.content = out_lines.join("\n");
-        outcome.content.push('\n');
+        outcome.content = content;
         outcome
     }
 
@@ -482,5 +486,33 @@ mod tests {
         }
         let err = validate_bash_syntax("if then\n").unwrap_err();
         assert!(!err.is_empty(), "expected non-empty error from bash -n");
+    }
+
+    /// Only the fixed line may change. Line endings, a missing final newline
+    /// and an empty file all come back byte-for-byte.
+    #[test]
+    fn fix_text_preserves_bytes_it_did_not_fix() {
+        let cases: [(&str, &str, usize); 7] = [
+            ("", "", 0),
+            ("\n", "\n", 0),
+            ("echo hi", "echo hi", 0),
+            ("echo hi\r\necho there\r\n", "echo hi\r\necho there\r\n", 0),
+            (
+                "echo a\r\ngrep -P '\\d+' f\r\necho b\r\n",
+                "echo a\r\ngrep -E '[0-9]+' f\r\necho b\r\n",
+                1,
+            ),
+            ("grep -P '\\d+' f", "grep -E '[0-9]+' f", 1),
+            (
+                "echo a\ngrep -P '\\d+' f\r\necho b",
+                "echo a\ngrep -E '[0-9]+' f\r\necho b",
+                1,
+            ),
+        ];
+        for (input, want, fixed) in cases {
+            let out = run_fix(input);
+            assert_eq!(out.content, want, "input {input:?}");
+            assert_eq!(out.fixed_count, fixed, "input {input:?}");
+        }
     }
 }
